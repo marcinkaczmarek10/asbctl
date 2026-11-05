@@ -124,3 +124,19 @@ func TestPurgeReportsTheScanLimitInTheSummary(t *testing.T) {
 		t.Errorf("Purge() = %+v, %v, want the scan limit reached with 1 not reached", summary, err)
 	}
 }
+
+func TestDrainDoesNotCallProcessForABatchWithNothingSelected(t *testing.T) {
+	queue := noiseQueue(150, "wanted")
+	selected := selectionOf(t, queue, Filter{PayloadTypeID: "Order"}).Sequences()
+	calls := 0
+
+	_, err := drain(context.Background(), queue, drainOptions{BatchSize: 100, Logger: discardLogger}, selected,
+		func(ctx context.Context, candidates []candidate, hold func(*azservicebus.ReceivedMessage)) (bool, error) {
+			calls++
+			return false, nil
+		})
+
+	if err != nil || calls != 1 {
+		t.Errorf("process calls = %d, error = %v, want 1: the first batch of 100 held none of the selected messages", calls, err)
+	}
+}
