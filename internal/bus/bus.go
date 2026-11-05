@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
+	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus/admin"
 )
 
 const (
@@ -35,9 +36,10 @@ type Peeker interface {
 
 var _ Peeker = (*azservicebus.Receiver)(nil)
 
-// Client wraps an azservicebus client that was opened for one command.
+// Client wraps the azservicebus clients that were opened for one command.
 type Client struct {
 	client *azservicebus.Client
+	admin  *admin.Client
 }
 
 // FullyQualifiedNamespace appends the public cloud suffix to a short namespace name.
@@ -55,18 +57,32 @@ func NewClient(namespace, connectionString string) (*Client, error) {
 		if err != nil {
 			return nil, fmt.Errorf("create client from connection string: %w", err)
 		}
-		return &Client{client: client}, nil
+		adminClient, err := admin.NewClientFromConnectionString(connectionString, nil)
+		if err != nil {
+			return nil, fmt.Errorf("create admin client from connection string: %w", err)
+		}
+		return &Client{client: client, admin: adminClient}, nil
 	}
 
 	credential, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("create credential: %w", err)
 	}
-	client, err := azservicebus.NewClient(FullyQualifiedNamespace(namespace), credential, nil)
+	fullyQualifiedNamespace := FullyQualifiedNamespace(namespace)
+	client, err := azservicebus.NewClient(fullyQualifiedNamespace, credential, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create client: %w", err)
 	}
-	return &Client{client: client}, nil
+	adminClient, err := admin.NewClient(fullyQualifiedNamespace, credential, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create admin client: %w", err)
+	}
+	return &Client{client: client, admin: adminClient}, nil
+}
+
+// Admin returns the admin client, for entity property reads.
+func (c *Client) Admin() *admin.Client {
+	return c.admin
 }
 
 // NewReceiver opens a peek-lock receiver on the target. It never uses ReceiveAndDelete.

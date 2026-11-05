@@ -1,6 +1,6 @@
 # ASBctl
 
-A thin command-line tool for Azure Service Bus message work: peek, dead-letter summary, export/import and dead-letter resend. `az servicebus` covers the infrastructure side (namespaces, queues, topics, rules); this tool does not. Only `peek` exists so far, the other commands are next.
+A thin command-line tool for Azure Service Bus message work: peek, dead-letter summary, export/import and dead-letter resend. `az servicebus` covers the infrastructure side (namespaces, queues, topics, rules); this tool does not. Only `peek` and `dlq summary` exist so far, the other commands are next.
 
 ## Install
 
@@ -18,6 +18,7 @@ Usage:
 
 Commands:
   peek     peek queue and subscription messages without removing them
+  dlq      work with dead-letter queues
   version  print the asbctl version
   help     print this help
 

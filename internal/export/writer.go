@@ -6,7 +6,6 @@ import (
 	"io"
 	"strings"
 	"text/tabwriter"
-	"unicode/utf8"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 )
@@ -131,11 +130,7 @@ func bodyCell(rec record) string {
 	if rec.BodyText == nil {
 		return fmt.Sprintf("<%d bytes binary>", rec.bodyBytes)
 	}
-	text := cell(*rec.BodyText)
-	if utf8.RuneCountInString(text) <= bodyColumnRunes {
-		return text
-	}
-	return string([]rune(text)[:bodyColumnRunes])
+	return truncateRunes(cell(*rec.BodyText), bodyColumnRunes)
 }
 
 // cell keeps a value on one table line and inside its own column.

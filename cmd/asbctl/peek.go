@@ -49,11 +49,7 @@ func runPeek(ctx context.Context, args []string, stdout, stderr io.Writer, logge
 	case errors.Is(err, flag.ErrHelp):
 		return exitOK
 	case err != nil:
-		export.WriteError(stderr, cfg.format, "usage", err)
-		if cfg.format != export.FormatJSON {
-			fmt.Fprintln(stderr, "run 'asbctl peek -h' for usage")
-		}
-		return exitUsage
+		return reportUsageError(stderr, cfg.format, err, "run 'asbctl peek -h' for usage")
 	}
 
 	if err := peek(ctx, cfg, connectionString, stdout, logger); err != nil {
@@ -108,23 +104,14 @@ func parsePeekArgs(args []string, helpOut io.Writer, hasConnectionString bool) (
 	var output string
 
 	fs := flag.NewFlagSet("peek", flag.ContinueOnError)
-	fs.SetOutput(io.Discard)
-	fs.StringVar(&cfg.namespace, "namespace", "", "Service Bus namespace: a short name or a fully qualified domain name")
-	fs.StringVar(&cfg.target.Queue, "queue", "", "queue to peek")
-	fs.StringVar(&cfg.target.Topic, "topic", "", "topic to peek, with --subscription")
-	fs.StringVar(&cfg.target.Subscription, "subscription", "", "subscription of --topic")
+	bindEntityFlags(fs, &cfg.namespace, &cfg.target)
 	fs.BoolVar(&cfg.target.DeadLetter, "dlq", false, "peek the dead-letter sub-queue")
 	fs.IntVar(&cfg.max, "max", defaultPeekMax, "peek at most this many messages")
 	fs.Int64Var(&cfg.fromSequence, "from-sequence", 0, "start at this sequence number (0 starts at the head)")
 	fs.StringVar(&cfg.payloadTypeID, "payload-type-id", "", "only output messages with this PayloadTypeId property;\nthe filter runs after peeking, so skipped messages still count toward --max")
 	fs.StringVar(&output, "output", string(export.FormatTable), "output format: table or json")
 
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprint(helpOut, peekUsageText)
-			fs.SetOutput(helpOut)
-			fs.PrintDefaults()
-		}
+	if err := parseFlagSet(fs, args, peekUsageText, helpOut); err != nil {
 		return cfg, err
 	}
 	if fs.NArg() > 0 {
@@ -141,16 +128,10 @@ func parsePeekArgs(args []string, helpOut io.Writer, hasConnectionString bool) (
 }
 
 func validatePeekConfig(cfg peekConfig, hasConnectionString bool) error {
-	target := cfg.target
+	if err := validateEntity(cfg.namespace, cfg.target, hasConnectionString); err != nil {
+		return err
+	}
 	switch {
-	case cfg.namespace == "" && !hasConnectionString:
-		return errors.New("--namespace is required")
-	case target.Queue == "" && target.Topic == "":
-		return errors.New("one of --queue or --topic with --subscription is required")
-	case target.Queue != "" && (target.Topic != "" || target.Subscription != ""):
-		return errors.New("--queue cannot be combined with --topic or --subscription")
-	case target.Queue == "" && target.Subscription == "":
-		return errors.New("--topic needs --subscription")
 	case cfg.max < 1:
 		return fmt.Errorf("--max is %d, want at least 1", cfg.max)
 	case cfg.fromSequence < 0:

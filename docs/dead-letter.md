@@ -2,7 +2,7 @@
 
 A dead-letter run that resends blindly can fail without any error: the messages return to the queue they came from, and nothing says which ones or why. These rules fix that. They are the contract for the `dlq` commands, and they hold for every one of them.
 
-Today only `dlq summary` exists. `dlq resend` and `dlq purge` are specified here before they are built, so that nobody builds them without the safeguards. The record and output format are in [output-format.md](output-format.md).
+Of the `dlq` commands only `dlq summary` exists today. `dlq resend` and `dlq purge` are specified here before they are built, so that nobody builds them without the safeguards. The record and output format are in [output-format.md](output-format.md).
 
 ## Failure modes these rules prevent
 

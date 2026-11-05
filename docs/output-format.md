@@ -41,6 +41,20 @@ A JSON string, number or bool is written as is. Any other AMQP type is written a
 
 `PayloadTypeId` is the application property that Ev.ServiceBus, a public MIT library, uses to route a message to its handler. `asbctl` shows it, filters on it with `--payload-type-id`, and never drops it on resend.
 
+## Dead-letter summary
+
+`asbctl dlq summary` writes one JSON object, not a stream:
+
+```json
+{"schema":1,"entity":{"queue":"orders","available":true,"active_messages":12,"dead_letter_messages":850,"scheduled_messages":0,"transfer_dead_letter_messages":0,"max_delivery_count":10,"lock_duration":"PT1M","requires_duplicate_detection":true,"duplicate_detection_window":"PT10M"},"peeked":850,"partial":false,"groups":[{"payload_type_id":"OrderPlaced","dead_letter_reason":"MaxDeliveryCountExceeded","count":850,"first_enqueued_at":"2026-11-05T10:00:00Z","last_enqueued_at":"2026-11-05T11:00:00Z","max_delivery_count":10,"top_dead_letter_error_description":"...","sample_message_id":"..."}]}
+```
+
+`entity` has `queue`, or `topic` and `subscription`. Reading counts and settings needs Manage rights. Without them `available` is `false`, the counts and settings are omitted, and the grouping still runs. For a subscription, `requires_duplicate_detection` and `duplicate_detection_window` come from the topic, and `scheduled_messages` is omitted. `lock_duration` and `duplicate_detection_window` are ISO 8601 durations as the service returns them.
+
+`groups` is sorted by `count` descending, then `payload_type_id`, then `dead_letter_reason`. A message with no `PayloadTypeId` property has `payload_type_id` set to the empty string, and both keys are always present. `top_dead_letter_error_description` is the most frequent one in the group, untruncated. `sample_message_id` is the first message seen in the group.
+
+`partial` is `true` when `dead_letter_messages` is known and larger than `peeked`. When it is unknown, `partial` is `true` if `peeked` reached `--max`, because the queue may hold more. The table prints a line saying the summary covers N of M messages.
+
 ## Errors
 
 In `json` mode a failure is one object on stderr:
