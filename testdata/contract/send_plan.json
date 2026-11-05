@@ -1,0 +1,1 @@
+{"schema":1,"target":{"queue":"orders"},"total":3,"payload_types":[{"payload_type_id":"OrderPlaced","count":2},{"payload_type_id":"","count":1}],"dry_run":false}

@@ -174,8 +174,6 @@ func propertyFromAMQP(value any) any {
 		return typedValue{Type: "uuid", Value: v.String()}
 	case amqp.Symbol:
 		return typedValue{Type: "symbol", Value: string(v)}
-	case time.Duration:
-		return typedValue{Type: "duration", Value: v.String()}
 	default:
 		return typedValue{Type: fmt.Sprintf("%T", v), Value: fmt.Sprint(v)}
 	}

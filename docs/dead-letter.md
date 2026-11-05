@@ -15,7 +15,7 @@ Of the `dlq` commands only `dlq summary` exists today. `dlq resend` and `dlq pur
 
 ## Snapshot
 
-`dlq resend` and `dlq purge` write a snapshot before they change anything. It is on by default, and the command prints its path. `--snapshot <path>` chooses the path. The file is NDJSON in the message record format, one record per message the command will act on.
+`dlq resend` and `dlq purge` write a snapshot before they change anything. It is on by default, and the command prints its path. `--snapshot <path>` chooses the path. The file is NDJSON in the message record format, one record per message the command will act on, and it is what `asbctl export` writes. `asbctl send` reads the same format, so a snapshot can be sent back.
 
 If the snapshot cannot be written, the command stops before it changes any message.
 

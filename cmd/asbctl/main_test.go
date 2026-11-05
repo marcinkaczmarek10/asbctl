@@ -32,6 +32,8 @@ func TestRun(t *testing.T) {
 		{name: "export help prints usage and succeeds", args: []string{"export", "-h"}, wantCode: 0, wantStdout: true},
 		{name: "export without an entity is a usage error", args: []string{"export", "--namespace", "n"}, wantCode: 2, wantStderrPart: "--queue or --topic"},
 		{name: "export refuses table output for records on stdout", args: []string{"export", "--namespace", "n", "--queue", "q", "--output", "table"}, wantCode: 2, wantStderrPart: "--output table cannot be used"},
+		{name: "send help prints usage and succeeds", args: []string{"send", "-h"}, wantCode: 0, wantStdout: true},
+		{name: "send without a target is a usage error", args: []string{"send", "--namespace", "n"}, wantCode: 2, wantStderrPart: "--queue or --topic is required"},
 		{name: "unknown flag on version is a usage error", args: []string{"version", "-x"}, wantCode: 2, wantStderrPart: "-x"},
 		{name: "extra argument on version is a usage error", args: []string{"version", "extra"}, wantCode: 2, wantStderrPart: "extra"},
 	}
@@ -41,7 +43,7 @@ func TestRun(t *testing.T) {
 			var stdout, stderr bytes.Buffer
 			logger := slog.New(slog.DiscardHandler)
 
-			got := run(context.Background(), tc.args, &stdout, &stderr, logger)
+			got := run(context.Background(), tc.args, strings.NewReader(""), &stdout, &stderr, logger)
 
 			if got != tc.wantCode {
 				t.Errorf("run(%q) = %d, want %d", tc.args, got, tc.wantCode)

@@ -98,7 +98,19 @@ func TestContractFilesMatchTheWriters(t *testing.T) {
 	}
 	WriteError(&failure, FormatJSON, "peek_failed", errors.New("service unavailable"))
 
-	var exported bytes.Buffer
+	var plan, results, exported bytes.Buffer
+	if err := WriteSendPlan(&plan, FormatJSON, NewSendPlan(SendTarget{Queue: "orders"}, map[string]int{"OrderPlaced": 2, "": 1}, false)); err != nil {
+		t.Fatalf("WriteSendPlan() error = %v", err)
+	}
+	for _, result := range []bus.SendResult{
+		{Line: 1, MessageID: "msg-1"},
+		{Line: 2, MessageID: "msg-2", Err: errors.New("the message is too large")},
+		{Line: 3},
+	} {
+		if err := WriteSendResult(&results, FormatJSON, result); err != nil {
+			t.Fatalf("WriteSendResult() error = %v", err)
+		}
+	}
 	if err := WriteExportResult(&exported, FormatJSON, ExportResult{Schema: Schema, Exported: 4, File: "orders.ndjson", Partial: true}); err != nil {
 		t.Fatalf("WriteExportResult() error = %v", err)
 	}
@@ -108,6 +120,8 @@ func TestContractFilesMatchTheWriters(t *testing.T) {
 		"summary.json":             summary.String(),
 		"summary_unavailable.json": unavailable.String(),
 		"error.json":               failure.String(),
+		"send_plan.json":           plan.String(),
+		"send_result.ndjson":       results.String(),
 		"export_result.json":       exported.String(),
 	}
 	for name, got := range files {

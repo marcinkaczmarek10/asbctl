@@ -67,6 +67,32 @@ The records go to `--file`, or to stdout when `--file` is absent or `-`. Records
 
 `partial` is `true` when the peek reached `--max`, because the entity may hold more. The file is written to `<file>.tmp` and renamed when the export succeeds, so a failed or interrupted export leaves nothing under the final name. An existing file is an error (`file_exists`) unless `--force` is given. Progress is logged on stderr every 1000 messages peeked.
 
+## Send
+
+`asbctl send` reads message records, the format that `export` writes, from `--file` or from stdin, and sends each to a queue or a topic (`--queue` or `--topic`, no subscription). The whole input is checked before anything is sent. A record that does not parse is a usage error that names its line, for example `line 3: schema is 9, want 1`.
+
+A message keeps its `message_id`, `content_type`, `correlation_id`, `subject`, `session_id`, `partition_key`, `to`, `reply_to` and `time_to_live_seconds`, and all its application properties. The broker-set fields `sequence_number`, `enqueued_at`, `delivery_count` and `dead_letter_*` are ignored. The body is the decoded `body`. For `body_type` `value` or `sequence` it is the AMQP value or sequence that `body_text` encodes.
+
+Typed application properties are restored to their AMQP types: `timestamp`, `binary`, `uuid`, `symbol`, `float` and `double`, including `NaN` and infinity. A JSON integer becomes an int64 and any other number a float64. A float with no fractional part, such as `3.0`, is written as `3` and so comes back as an integer. A typed object inside a `value` body is restored the same way. A property of any other type is a usage error.
+
+`--new-message-id` gives each message a new random id and keeps the original in the application property `asbctl-original-message-id`. A consumer that deduplicates on `MessageId` will then process the message twice.
+
+Without `--yes` the command prints the plan and sends nothing. `--dry-run` prints the same plan even with `--yes`. In `json` mode the plan is one object:
+
+```json
+{"schema":1,"target":{"queue":"orders"},"total":3,"payload_types":[{"payload_type_id":"OrderPlaced","count":2},{"payload_type_id":"","count":1}],"dry_run":false}
+```
+
+With `--yes` each message is reported as it is sent, one line in `json` mode:
+
+```json
+{"schema":1,"line":2,"message_id":"msg-2","status":"failed","error":"the message is too large"}
+```
+
+`line` is the input line, `status` is `sent` or `failed`, and `error` is set only when it failed. In table mode only failures are printed, followed by one summary line. The exit code is 0 when every message was sent, 3 when some were, and 1 when none were. In `json` mode a non-zero exit also writes the error object on stderr, with code `partial`, `send_failed` or `canceled`.
+
+Messages go out in batches of at most 100. A batch that fails marks every message in it as failed, and a message too large for any batch fails alone. `--rate N` spaces the batches so that they average N messages per second, and then a batch is at most N messages. If the run is cancelled while a batch is in flight, that batch is reported as failed although the broker may have accepted it, so a rerun can send it twice.
+
 ## Errors
 
 In `json` mode a failure is one object on stderr:

@@ -16,6 +16,7 @@ const (
 	exitOK      = 0
 	exitFailure = 1
 	exitUsage   = 2
+	exitPartial = 3
 )
 
 const usageText = `asbctl works with Azure Service Bus messages.
@@ -27,6 +28,7 @@ Commands:
   peek     peek queue and subscription messages without removing them
   dlq      work with dead-letter queues
   export   write the messages of a queue or subscription as NDJSON records
+  send     send NDJSON records to a queue or topic
   version  print the asbctl version
   help     print this help
 
@@ -36,12 +38,12 @@ Run "asbctl <command> -h" for the flags of a command.
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
-	code := run(ctx, os.Args[1:], os.Stdout, os.Stderr, logger)
+	code := run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr, logger)
 	stop()
 	os.Exit(code)
 }
 
-func run(ctx context.Context, args []string, stdout, stderr io.Writer, logger *slog.Logger) int {
+func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer, logger *slog.Logger) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "asbctl: no command given")
 		fmt.Fprint(stderr, usageText)
@@ -60,6 +62,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, logger *s
 		return runDLQ(ctx, rest, stdout, stderr, logger)
 	case "export":
 		return runExport(ctx, rest, stdout, stderr, logger)
+	case "send":
+		return runSend(ctx, rest, stdin, stdout, stderr, logger)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, usageText)
 		return exitOK

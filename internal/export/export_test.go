@@ -148,9 +148,9 @@ func TestRecordFromReceivedProperties(t *testing.T) {
 			want:       map[string]any{"u": typedValue{Type: "uuid", Value: "01020304-0506-0708-090a-0b0c0d0e0f10"}},
 		},
 		{
-			name:       "symbol and duration are typed",
-			properties: map[string]any{"y": amqp.Symbol("sym"), "d": 90 * time.Second},
-			want:       map[string]any{"y": typedValue{Type: "symbol", Value: "sym"}, "d": typedValue{Type: "duration", Value: "1m30s"}},
+			name:       "symbol is typed",
+			properties: map[string]any{"y": amqp.Symbol("sym")},
+			want:       map[string]any{"y": typedValue{Type: "symbol", Value: "sym"}},
 		},
 		{
 			name:       "non-finite float is typed because json cannot hold it",
