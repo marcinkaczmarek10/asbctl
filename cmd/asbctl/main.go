@@ -89,10 +89,23 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 	return exitOK
 }
 
+// version is set by the release build with -ldflags "-X main.version=<version>".
+var version string
+
 func moduleVersion() string {
 	info, ok := debug.ReadBuildInfo()
-	if !ok || info.Main.Version == "" {
+	return versionFrom(version, info, ok)
+}
+
+// versionFrom prefers the version that the release build linked in, then the module version that the Go
+// toolchain recorded, and falls back to (devel).
+func versionFrom(linked string, info *debug.BuildInfo, hasInfo bool) string {
+	switch {
+	case linked != "":
+		return linked
+	case !hasInfo || info.Main.Version == "":
 		return "(devel)"
+	default:
+		return info.Main.Version
 	}
-	return info.Main.Version
 }
