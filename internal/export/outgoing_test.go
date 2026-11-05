@@ -364,3 +364,24 @@ func TestOutgoingsKeepsANullProperty(t *testing.T) {
 		t.Errorf("property p = %v, present %v, want a nil value that is present", value, present)
 	}
 }
+
+func TestAnnotatedMessageWithoutOptionalFieldsHasNoneOfThem(t *testing.T) {
+	outgoings, err := parseAll(t, `{"schema":1,"body_type":"value","body":"","body_text":"1"}`, nil)
+
+	if err != nil {
+		t.Fatalf("Outgoings() error = %v", err)
+	}
+	message := outgoings[0].Annotated
+	if message.Header != nil || message.MessageAnnotations != nil || message.Properties.MessageID != nil ||
+		message.Properties.CorrelationID != nil || message.ApplicationProperties != nil {
+		t.Errorf("message = %+v, want no header, annotations, ids or properties for an empty record", message)
+	}
+}
+
+func TestDataMessageWithoutATimeToLiveHasNone(t *testing.T) {
+	outgoings, err := parseAll(t, `{"schema":1,"time_to_live_seconds":0,"body":""}`, nil)
+
+	if err != nil || outgoings[0].Message.TimeToLive != nil {
+		t.Errorf("Outgoings() = %v, %v, want no TimeToLive for zero seconds", outgoings, err)
+	}
+}

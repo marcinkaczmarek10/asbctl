@@ -37,7 +37,7 @@ func (e *LineError) Unwrap() error { return e.Err }
 // that is not nil replaces every MessageId and keeps the first one in OriginalMessageIDProperty.
 func Outgoings(input io.Reader, newMessageID func() string) iter.Seq2[bus.Outgoing, error] {
 	return func(yield func(bus.Outgoing, error) bool) {
-		reader := bufio.NewReaderSize(input, 64*1024)
+		reader := bufio.NewReaderSize(input, 65536)
 		for lineNumber := 1; ; lineNumber++ {
 			line, readErr := reader.ReadBytes('\n')
 			if len(bytes.TrimSpace(line)) > 0 {
@@ -111,7 +111,7 @@ func withOriginalMessageID(properties map[string]any, originalID string) map[str
 	if _, kept := properties[OriginalMessageIDProperty]; kept || originalID == "" {
 		return properties
 	}
-	updated := make(map[string]any, len(properties)+1)
+	updated := make(map[string]any, len(properties))
 	for name, value := range properties {
 		updated[name] = value
 	}
