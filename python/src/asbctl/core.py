@@ -12,6 +12,10 @@ from asbctl.exceptions import AsbctlError, BinaryNotFoundError
 
 BINARY_ENV_NAME = "ASBCTL_BIN"
 
+# A premium namespace allows a 100 MiB message, which is about 134 MiB as base64, and a value body
+# is written a second time as body_text, so one output line can reach 256 MiB.
+OUTPUT_LINE_LIMIT_BYTES = 256 * 1024 * 1024
+
 type FlagValue = str | int | float | bool | None
 
 
@@ -110,7 +114,7 @@ async def run(
     binary_path = get_binary_path(os.environ)
 
     async with contextlib.aclosing(
-        _stream_lines(binary_path, arguments, stdin_lines, timeout_seconds)
+        _stream_lines(binary_path, arguments, stdin_lines, timeout_seconds, OUTPUT_LINE_LIMIT_BYTES)
     ) as lines:
         async for line in lines:
             if line.strip():
@@ -145,9 +149,17 @@ async def _stream_lines(
     arguments: list[str],
     stdin_lines: AsyncIterable[str] | Iterable[str] | None,
     timeout_seconds: float | None,
+    line_limit_bytes: int,
 ) -> AsyncGenerator[str]:
+    is_line_too_long = False
+    exit_code = 0
     async with asyncio.timeout(timeout_seconds):
-        process = await _start_process(binary_path, arguments, has_stdin=stdin_lines is not None)
+        process = await _start_process(
+            binary_path,
+            arguments,
+            has_stdin=stdin_lines is not None,
+            line_limit_bytes=line_limit_bytes,
+        )
         try:
             async with asyncio.TaskGroup() as tasks:
                 stderr_task = tasks.create_task(
@@ -157,7 +169,16 @@ async def _stream_lines(
                     tasks.create_task(
                         _write_lines(cast("asyncio.StreamWriter", process.stdin), stdin_lines)
                     )
-                async for line in cast("asyncio.StreamReader", process.stdout):
+                stdout = cast("asyncio.StreamReader", process.stdout)
+                while True:
+                    try:
+                        line = await stdout.readline()
+                    except ValueError:
+                        is_line_too_long = True
+                        await _stop_process(process)
+                        break
+                    if not line:
+                        break
                     try:
                         yield line.decode()
                     except GeneratorExit:
@@ -165,16 +186,19 @@ async def _stream_lines(
                         # here and end the generator normally.
                         await _stop_process(process)
                         return
-                exit_code = await process.wait()
+                if not is_line_too_long:
+                    exit_code = await process.wait()
         finally:
             await _stop_process(process)
 
+    if is_line_too_long:
+        raise ValueError(f"an output line is longer than {line_limit_bytes} bytes")
     if exit_code != 0:
         raise error_from_stderr(stderr_task.result(), exit_code)
 
 
 async def _start_process(
-    binary_path: str, arguments: list[str], *, has_stdin: bool
+    binary_path: str, arguments: list[str], *, has_stdin: bool, line_limit_bytes: int
 ) -> asyncio.subprocess.Process:
     try:
         return await asyncio.create_subprocess_exec(
@@ -183,6 +207,7 @@ async def _start_process(
             stdin=asyncio.subprocess.PIPE if has_stdin else asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            limit=line_limit_bytes,
         )
     except FileNotFoundError as error:
         raise BinaryNotFoundError(f"no asbctl binary at {binary_path}") from error

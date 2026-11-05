@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import json
 import stat
 import time
 from pathlib import Path
@@ -10,6 +11,7 @@ import pytest
 from asbctl.core import (
     _read_text,
     _stop_process,
+    _stream_lines,
     _write_lines,
     build_arguments,
     error_from_stderr,
@@ -564,3 +566,45 @@ async def test_read_text_replaces_bytes_that_are_not_utf8():
 
     # Then
     assert text == "ok \ufffd"
+
+
+async def test_run_reads_an_output_line_longer_than_the_default_stream_limit(
+    fake_asbctl: FakeFactory,
+):
+    # Given
+    body = "A" * (1536 * 1024)
+    fake_asbctl(stdout=json.dumps({"schema": 1, "body": body}) + "\n")
+
+    # When
+    objects = [output async for output in run("peek")]
+
+    # Then
+    assert objects == [{"schema": 1, "body": body}]
+
+
+async def test_run_keeps_a_long_stderr_text_when_the_binary_fails(fake_asbctl: FakeFactory):
+    # Given
+    long_text = "x" * (1536 * 1024)
+    fake_asbctl(stderr=long_text, exit_code=1)
+
+    # When
+    with pytest.raises(AsbctlError) as raised:
+        [output async for output in run("peek")]
+
+    # Then
+    assert raised.value.message == long_text
+
+
+async def test_stream_lines_raises_a_plain_value_error_naming_the_limit_for_an_oversize_line(
+    fake_asbctl: FakeFactory,
+):
+    # Given
+    fake = fake_asbctl(stdout="x" * 5000 + "\n", sleep_seconds=0)
+
+    # When
+    with pytest.raises(ValueError, match=r"^an output line is longer than 1000 bytes$") as raised:
+        [line async for line in _stream_lines(str(fake.path), ["peek"], None, 20, 1000)]
+
+    # Then
+    assert type(raised.value) is ValueError
+    assert not fake.is_running()
