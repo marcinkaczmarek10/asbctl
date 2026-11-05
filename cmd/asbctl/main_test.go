@@ -1,0 +1,49 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"log/slog"
+	"strings"
+	"testing"
+)
+
+func TestRun(t *testing.T) {
+	tests := []struct {
+		name           string
+		args           []string
+		wantCode       int
+		wantStdout     bool
+		wantStderrPart string
+	}{
+		{name: "version prints the version and succeeds", args: []string{"version"}, wantCode: 0, wantStdout: true},
+		{name: "help prints usage and succeeds", args: []string{"help"}, wantCode: 0, wantStdout: true},
+		{name: "dash h prints usage and succeeds", args: []string{"-h"}, wantCode: 0, wantStdout: true},
+		{name: "no command is a usage error", args: nil, wantCode: 2, wantStderrPart: "no command"},
+		{name: "unknown command is a usage error that names the command", args: []string{"nope"}, wantCode: 2, wantStderrPart: "nope"},
+		{name: "unknown flag on version is a usage error", args: []string{"version", "-x"}, wantCode: 2, wantStderrPart: "-x"},
+		{name: "extra argument on version is a usage error", args: []string{"version", "extra"}, wantCode: 2, wantStderrPart: "extra"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			logger := slog.New(slog.DiscardHandler)
+
+			got := run(context.Background(), tc.args, &stdout, &stderr, logger)
+
+			if got != tc.wantCode {
+				t.Errorf("run(%q) = %d, want %d", tc.args, got, tc.wantCode)
+			}
+			if tc.wantStdout && stdout.Len() == 0 {
+				t.Errorf("run(%q) wrote nothing to stdout, want output", tc.args)
+			}
+			if !tc.wantStdout && stdout.Len() != 0 {
+				t.Errorf("run(%q) stdout = %q, want empty", tc.args, stdout.String())
+			}
+			if !strings.Contains(stderr.String(), tc.wantStderrPart) {
+				t.Errorf("run(%q) stderr = %q, want it to contain %q", tc.args, stderr.String(), tc.wantStderrPart)
+			}
+		})
+	}
+}
