@@ -32,9 +32,6 @@ scripts/            third-party licence collector
 - **Python:** async everywhere (asyncio.create_subprocess_exec, no threads). Small immutable
   values are NamedTuple. Converters named result_from_source. Zero runtime dependencies.
   Tooling: uv, ruff check + format (rules include S and I), ty, pytest + pytest-asyncio.
-- **No company references.** No EcoVadis names, Azure DevOps hosts, internal queue or namespace
-  names, or work-item ids. Examples use made-up names like contoso-sb. The one public reference
-  allowed is Ev.ServiceBus (MIT library on GitHub) in the context of PayloadTypeId.
 - **Identity:** commits authored as marcin.kacz10@gmail.com (repo-local git config). Do not
   change git config or credentials. Do not push.
 - **Commits:** type(scope): subject, imperative, lower case, no trailing period. Body explains
