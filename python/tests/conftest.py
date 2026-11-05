@@ -20,6 +20,9 @@ FAKE_SCRIPT = textwrap.dedent(
     config = json.loads({config!r})
     with open(config["arguments_path"], "w") as arguments_file:
         json.dump(sys.argv[1:], arguments_file)
+    if config["read_stdin"]:
+        with open(config["stdin_path"], "w") as stdin_file:
+            stdin_file.write(sys.stdin.read())
     lines = config["stdout"].splitlines(keepends=True)
     for line in lines[: config["lines_before_sleep"]]:
         sys.stdout.write(line)
@@ -39,9 +42,14 @@ class FakeAsbctl:
 
     path: Path
     arguments_path: Path
+    stdin_path: Path
 
     def arguments(self) -> list[str]:
         return json.loads(self.arguments_path.read_text())
+
+    def stdin(self) -> str:
+        """What the fake read on stdin, recorded only when it was built with read_stdin."""
+        return self.stdin_path.read_text()
 
 
 type FakeFactory = Callable[..., FakeAsbctl]
@@ -57,10 +65,14 @@ def fake_asbctl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeFactory:
         exit_code: int = 0,
         lines_before_sleep: int = 0,
         sleep_seconds: float = 0,
+        read_stdin: bool = False,
     ) -> FakeAsbctl:
         arguments_path = tmp_path / "arguments.json"
+        stdin_path = tmp_path / "stdin.ndjson"
         config = {
             "arguments_path": str(arguments_path),
+            "stdin_path": str(stdin_path),
+            "read_stdin": read_stdin,
             "stdout": stdout,
             "stderr": stderr,
             "exit_code": exit_code,
@@ -71,7 +83,7 @@ def fake_asbctl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeFactory:
         path.write_text(FAKE_SCRIPT.format(python=sys.executable, config=json.dumps(config)))
         path.chmod(path.stat().st_mode | stat.S_IXUSR)
         monkeypatch.setenv("ASBCTL_BIN", str(path))
-        return FakeAsbctl(path=path, arguments_path=arguments_path)
+        return FakeAsbctl(path=path, arguments_path=arguments_path, stdin_path=stdin_path)
 
     return build
 

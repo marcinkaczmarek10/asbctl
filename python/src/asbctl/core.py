@@ -1,12 +1,13 @@
 """Run the asbctl binary and stream the JSON it prints."""
 
+import contextlib
 import json
 import os
 import shutil
 import subprocess
 import tempfile
 import threading
-from collections.abc import Generator
+from collections.abc import Generator, Iterable
 from typing import Any
 
 BINARY_ENV = "ASBCTL_BIN"
@@ -75,12 +76,14 @@ def run(
     command: str,
     *subcommands: str,
     timeout: float | None = None,
+    stdin_lines: Iterable[str] | None = None,
     **flags: FlagValue,
 ) -> Generator[dict[str, Any]]:
     """Run an asbctl command and yield each JSON object it prints, as it prints it.
 
-    Keyword arguments become flags: payload_type_id="X" is --payload-type-id X. Raises AsbctlError
-    when asbctl exits non-zero, and subprocess.TimeoutExpired when timeout seconds pass first.
+    Keyword arguments become flags: payload_type_id="X" is --payload-type-id X. Each string in
+    stdin_lines is written to the command's stdin as one line. Raises AsbctlError when asbctl exits
+    non-zero, and subprocess.TimeoutExpired when timeout seconds pass first.
     """
     arguments = [find_binary(), *build_arguments(command, subcommands, flags)]
 
@@ -89,7 +92,7 @@ def run(
         # The executable is the caller's choice (ASBCTL_BIN or PATH) and the arguments are a list.
         process = subprocess.Popen(  # noqa: S603
             arguments,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL if stdin_lines is None else subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=stderr_file,
             text=True,
@@ -103,6 +106,8 @@ def run(
         timer = None if timeout is None else threading.Timer(timeout, kill_on_timeout)
         if timer:
             timer.start()
+        if stdin_lines is not None:
+            threading.Thread(target=_feed, args=(process, stdin_lines), daemon=True).start()
         try:
             assert process.stdout is not None  # noqa: S101
             for line in process.stdout:
@@ -123,6 +128,24 @@ def run(
         if exit_code != 0:
             stderr_file.seek(0)
             raise error_from_stderr(stderr_file.read(), exit_code)
+
+
+def _feed(process: subprocess.Popen[str], lines: Iterable[str]) -> None:
+    """Write the lines to the process, then close its stdin so that it sees the end of the input.
+
+    A write error is ignored on purpose: it means the process exited early, and its exit code
+    and stderr are what run() reports.
+    """
+    stdin = process.stdin
+    assert stdin is not None  # noqa: S101
+    try:
+        for line in lines:
+            stdin.write(line + "\n")
+    except (OSError, ValueError):
+        pass
+    finally:
+        with contextlib.suppress(OSError, ValueError):
+            stdin.close()
 
 
 def _object_from_line(line: str) -> dict[str, Any]:
