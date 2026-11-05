@@ -28,7 +28,7 @@ func discardProcess(context.Context, []candidate, func(*azservicebus.ReceivedMes
 
 func TestDrainStopsAtTheHoldCapAndReportsTheRestAsNotHandled(t *testing.T) {
 	queue := noiseQueue(250, "wanted")
-	selected := selectionOf(t, queue, Filter{PayloadTypeID: "Order"}).Sequences()
+	selected := selectionOf(t, queue, Filter{PayloadTypeID: "Order"}).MessageIDs()
 
 	result, err := drain(context.Background(), queue, drainOptions{BatchSize: 100, MaxHeld: 100, Logger: discardLogger}, selected, discardProcess)
 
@@ -48,7 +48,7 @@ func TestDrainStopsAtTheHoldCapAndReportsTheRestAsNotHandled(t *testing.T) {
 
 func TestDrainDoesNotFlagTheCapWhenEverySelectedMessageWasHandled(t *testing.T) {
 	queue := noiseQueue(99, "wanted")
-	selected := selectionOf(t, queue, Filter{PayloadTypeID: "Order"}).Sequences()
+	selected := selectionOf(t, queue, Filter{PayloadTypeID: "Order"}).MessageIDs()
 
 	result, _ := drain(context.Background(), queue, drainOptions{BatchSize: 100, MaxHeld: 99, Logger: discardLogger}, selected, discardProcess)
 
@@ -59,7 +59,7 @@ func TestDrainDoesNotFlagTheCapWhenEverySelectedMessageWasHandled(t *testing.T) 
 
 func TestDrainWithoutACapReadsThroughEverything(t *testing.T) {
 	queue := noiseQueue(250, "wanted")
-	selected := selectionOf(t, queue, Filter{PayloadTypeID: "Order"}).Sequences()
+	selected := selectionOf(t, queue, Filter{PayloadTypeID: "Order"}).MessageIDs()
 
 	result, _ := drain(context.Background(), queue, drainOptions{BatchSize: 100, Logger: discardLogger}, selected, discardProcess)
 
@@ -127,7 +127,7 @@ func TestPurgeReportsTheScanLimitInTheSummary(t *testing.T) {
 
 func TestDrainDoesNotCallProcessForABatchWithNothingSelected(t *testing.T) {
 	queue := noiseQueue(150, "wanted")
-	selected := selectionOf(t, queue, Filter{PayloadTypeID: "Order"}).Sequences()
+	selected := selectionOf(t, queue, Filter{PayloadTypeID: "Order"}).MessageIDs()
 	calls := 0
 
 	_, err := drain(context.Background(), queue, drainOptions{BatchSize: 100, Logger: discardLogger}, selected,

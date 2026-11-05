@@ -25,7 +25,7 @@ func Purge(
 	onResult func(Result) error,
 ) (PurgeSummary, error) {
 	summary := newPurgeSummary(snapshot)
-	selected := selection.Sequences()
+	selected := selection.MessageIDs()
 
 	drained, err := drain(ctx, receiver, drainOptions{BatchSize: bus.MaxBatchSize, MaxHeld: options.MaxHeld, Logger: options.Logger}, selected,
 		func(ctx context.Context, candidates []candidate, hold func(*azservicebus.ReceivedMessage)) (bool, error) {
@@ -45,7 +45,7 @@ func Purge(
 			return false, nil
 		})
 
-	summary.NotReached = len(selected) - drained.Handled
+	summary.NotReached = len(selection.Entries) - drained.Handled
 	summary.ScanLimitReached = drained.ScanLimited
 	return summary, err
 }
