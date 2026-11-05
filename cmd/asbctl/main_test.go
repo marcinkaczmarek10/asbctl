@@ -21,6 +21,9 @@ func TestRun(t *testing.T) {
 		{name: "dash h prints usage and succeeds", args: []string{"-h"}, wantCode: 0, wantStdout: true},
 		{name: "no command is a usage error", args: nil, wantCode: 2, wantStderrPart: "no command"},
 		{name: "unknown command is a usage error that names the command", args: []string{"nope"}, wantCode: 2, wantStderrPart: "nope"},
+		{name: "peek help prints usage and succeeds", args: []string{"peek", "-h"}, wantCode: 0, wantStdout: true},
+		{name: "peek without an entity is a usage error", args: []string{"peek", "--namespace", "n"}, wantCode: 2, wantStderrPart: "--queue or --topic"},
+		{name: "peek with a bad flag is a usage error", args: []string{"peek", "--nope"}, wantCode: 2, wantStderrPart: "flag provided but not defined: -nope"},
 		{name: "unknown flag on version is a usage error", args: []string{"version", "-x"}, wantCode: 2, wantStderrPart: "-x"},
 		{name: "extra argument on version is a usage error", args: []string{"version", "extra"}, wantCode: 2, wantStderrPart: "extra"},
 	}

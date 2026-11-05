@@ -24,8 +24,11 @@ Usage:
   asbctl <command> [flags]
 
 Commands:
+  peek     peek queue and subscription messages without removing them
   version  print the asbctl version
   help     print this help
+
+Run "asbctl <command> -h" for the flags of a command.
 `
 
 func main() {
@@ -49,6 +52,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, logger *s
 	switch name {
 	case "version":
 		return runVersion(rest, stdout, stderr)
+	case "peek":
+		return runPeek(ctx, rest, stdout, stderr, logger)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, usageText)
 		return exitOK
