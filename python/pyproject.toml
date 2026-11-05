@@ -1,6 +1,6 @@
 [project]
 name = "asbctl"
-version = "0.1.0"
+version = "0.0.0.dev0"
 description = "Python adapter for the asbctl command-line tool"
 readme = "README.md"
 license = "MIT"
@@ -25,6 +25,7 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-ra"]
+pythonpath = ["scripts"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
@@ -35,4 +36,7 @@ line-length = 100
 select = ["E", "F", "I", "S", "B", "UP", "N", "A", "SIM", "RUF"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+"tests/**" = ["S101", "S603"]
+
+[tool.ty.environment]
+extra-paths = ["scripts"]

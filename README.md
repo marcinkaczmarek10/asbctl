@@ -8,6 +8,8 @@ A thin command-line tool for Azure Service Bus message work: peek, dead-letter s
 go install github.com/marcinkaczmarek10/asbctl/cmd/asbctl@latest
 ```
 
+A tagged release also attaches archives, `checksums.txt` and an SBOM for darwin, linux and windows on amd64 and arm64.
+
 ## Usage
 
 ```
@@ -31,7 +33,7 @@ Output is a table by default and NDJSON with `--output json`. The record shape, 
 
 ## Python
 
-`python/` holds a zero-dependency async adapter that runs `asbctl --output json` and returns typed results. It needs Python 3.13 or later, and finds the binary through `ASBCTL_BIN` or `PATH`.
+`python/` holds a zero-dependency async adapter that runs `asbctl --output json` and returns typed results. It needs Python 3.13 or later. It finds the binary through `ASBCTL_BIN`, then the binary bundled in the package, then `PATH`. A release builds one wheel for each platform that carries the binary and installs an `asbctl` command that runs it. The wheel tagged `any` and the sdist carry no binary and need `ASBCTL_BIN` or `PATH`. Windows on arm64 has no wheel.
 
 ```python
 import asyncio

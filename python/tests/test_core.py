@@ -86,10 +86,36 @@ def test_get_binary_path_prefers_the_configured_binary():
     environment = {"ASBCTL_BIN": "/opt/custom/asbctl", "PATH": "/usr/bin"}
 
     # When
-    binary_path = get_binary_path(environment)
+    binary_path = get_binary_path(environment, None)
 
     # Then
     assert binary_path == "/opt/custom/asbctl"
+
+
+def test_get_binary_path_prefers_the_configured_binary_over_the_bundled_one():
+    # Given
+    environment = {"ASBCTL_BIN": "/opt/custom/asbctl"}
+    bundled_path = Path("/site-packages/asbctl/bin/asbctl")
+
+    # When
+    binary_path = get_binary_path(environment, bundled_path)
+
+    # Then
+    assert binary_path == "/opt/custom/asbctl"
+
+
+def test_get_binary_path_prefers_the_bundled_binary_over_path(tmp_path: Path):
+    # Given
+    on_path = tmp_path / "asbctl"
+    on_path.write_text("#!/bin/sh\n")
+    on_path.chmod(on_path.stat().st_mode | stat.S_IXUSR)
+    bundled_path = Path("/site-packages/asbctl/bin/asbctl")
+
+    # When
+    binary_path = get_binary_path({"PATH": str(tmp_path)}, bundled_path)
+
+    # Then
+    assert binary_path == str(bundled_path)
 
 
 def test_get_binary_path_finds_asbctl_on_path(tmp_path: Path):
@@ -99,7 +125,7 @@ def test_get_binary_path_finds_asbctl_on_path(tmp_path: Path):
     executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
 
     # When
-    binary_path = get_binary_path({"PATH": str(tmp_path)})
+    binary_path = get_binary_path({"PATH": str(tmp_path)}, None)
 
     # Then
     assert binary_path == str(executable)
@@ -111,7 +137,7 @@ def test_get_binary_path_raises_when_asbctl_is_nowhere(tmp_path: Path):
 
     # When
     with pytest.raises(BinaryNotFoundError, match="ASBCTL_BIN"):
-        get_binary_path(environment)
+        get_binary_path(environment, None)
 
     # Then
 
@@ -122,7 +148,7 @@ def test_get_binary_path_ignores_an_empty_configured_binary(tmp_path: Path):
 
     # When
     with pytest.raises(BinaryNotFoundError):
-        get_binary_path(environment)
+        get_binary_path(environment, None)
 
     # Then
 

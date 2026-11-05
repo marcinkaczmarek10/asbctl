@@ -33,3 +33,72 @@ jobs:
           name: dist
           path: dist
           retention-days: 7
+
+  python:
+    needs: goreleaser
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.13"
+      - name: Build one wheel per binary, the wheel without a binary and the sdist
+        run: |
+          VERSION="$(uv run --no-project python python/scripts/build_wheel.py --version "$RELEASE_TAG" --print-version)"
+          uv run --no-project python python/scripts/build_wheel.py --version "$RELEASE_TAG" --artifacts dist/artifacts.json --out python-dist
+          cd python
+          uv version --frozen "$VERSION"
+          uv build --sdist --out-dir ../python-dist
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-dist
+          path: python-dist
+          retention-days: 7
+
+  # Publishing is off. Marcin enables it after the security scan and once the repository is
+  # public: set `if: true` (or delete the line), register this workflow and the `pypi`
+  # environment as a Trusted Publisher on pypi.org, then push a tag. No token is stored.
+  publish:
+    if: false
+    needs: python
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-dist
+          path: python-dist
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: python-dist
+
+  # A dry run against TestPyPI. Register a Trusted Publisher on test.pypi.org with the
+  # environment `testpypi`, then uncomment.
+  #
+  # publish-test:
+  #   needs: python
+  #   runs-on: ubuntu-latest
+  #   environment: testpypi
+  #   permissions:
+  #     id-token: write
+  #   steps:
+  #     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+  #       with:
+  #         name: python-dist
+  #         path: python-dist
+  #     - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+  #       with:
+  #         repository-url: https://test.pypi.org/legacy/
+  #         packages-dir: python-dist

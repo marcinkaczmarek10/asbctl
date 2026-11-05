@@ -5,9 +5,12 @@ import contextlib
 import json
 import os
 import shutil
+import sys
 from collections.abc import AsyncGenerator, AsyncIterable, Iterable, Mapping
+from pathlib import Path
 from typing import Any, cast
 
+from asbctl.bundled import find_bundled_binary_path
 from asbctl.exceptions import AsbctlError, BinaryNotFoundError
 
 BINARY_ENV_NAME = "ASBCTL_BIN"
@@ -19,11 +22,12 @@ OUTPUT_LINE_LIMIT_BYTES = 256 * 1024 * 1024
 type FlagValue = str | int | float | bool | None
 
 
-def get_binary_path(environment: Mapping[str, str]) -> str:
-    """Return the binary that ASBCTL_BIN names, or the asbctl found on PATH.
+def get_binary_path(environment: Mapping[str, str], bundled_path: Path | None) -> str:
+    """Return the binary that ASBCTL_BIN names, then the bundled one, then the asbctl on PATH.
 
     Args:
         environment: The environment variables to read ASBCTL_BIN and PATH from.
+        bundled_path: The binary that a platform wheel installed, or None.
 
     Raises:
         BinaryNotFoundError: ASBCTL_BIN is unset and asbctl is not on PATH.
@@ -31,6 +35,9 @@ def get_binary_path(environment: Mapping[str, str]) -> str:
     configured_path = environment.get(BINARY_ENV_NAME)
     if configured_path:
         return configured_path
+
+    if bundled_path is not None:
+        return str(bundled_path)
 
     found_path = shutil.which("asbctl", path=environment.get("PATH"))
     if found_path is None:
@@ -111,7 +118,9 @@ async def run(
         TimeoutError: The run took longer than timeout_seconds.
     """
     arguments = build_arguments(command, subcommands, flags)
-    binary_path = get_binary_path(os.environ)
+    binary_path = get_binary_path(
+        os.environ, find_bundled_binary_path(Path(__file__).parent, sys.platform)
+    )
 
     async with contextlib.aclosing(
         _stream_lines(binary_path, arguments, stdin_lines, timeout_seconds, OUTPUT_LINE_LIMIT_BYTES)
