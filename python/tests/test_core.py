@@ -1,12 +1,16 @@
+import asyncio
 import contextlib
 import stat
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
 from asbctl.core import (
+    _read_text,
+    _stop_process,
+    _write_lines,
     build_arguments,
     error_from_stderr,
     get_binary_path,
@@ -58,7 +62,7 @@ def test_build_arguments_rejects_an_output_flag():
     flags = {"output": "table"}
 
     # When
-    with pytest.raises(ValueError, match="always json"):
+    with pytest.raises(ValueError, match=r"^output is always json, do not pass it$"):
         build_arguments("peek", (), flags)
 
     # Then
@@ -69,7 +73,7 @@ def test_build_arguments_rejects_a_flag_value_of_an_unsupported_type():
     flags: dict[str, Any] = {"queues": ["a", "b"]}
 
     # When
-    with pytest.raises(TypeError, match="queues"):
+    with pytest.raises(TypeError, match=r"^flag queues has unsupported type list$"):
         build_arguments("peek", (), flags)
 
     # Then
@@ -178,7 +182,7 @@ def test_object_from_line_parses_a_json_object():
 @pytest.mark.parametrize("line", ["[1, 2]", '"text"', "7"])
 def test_object_from_line_rejects_json_that_is_not_an_object(line: str):
     # Given
-    expected_message = "JSON object"
+    expected_message = r"^expected a JSON object per line, got "
 
     # When
     with pytest.raises(ValueError, match=expected_message):
@@ -426,3 +430,137 @@ async def test_run_once_rejects_a_run_that_prints_no_object_or_several(
         await run_once("dlq", "summary")
 
     # Then
+
+
+def test_object_from_line_names_the_type_it_got_instead_of_an_object():
+    # Given
+    line = "[1, 2]"
+
+    # When
+    with pytest.raises(ValueError, match=r"got list$"):
+        object_from_line(line)
+
+    # Then
+
+
+def test_error_from_stderr_skips_a_trailing_line_that_is_not_json():
+    # Given
+    stderr_text = (
+        '{"schema":1,"error":{"code":"canceled","message":"stopped after 4 of 9"}}\n'
+        "goroutine 1 [running]\n"
+    )
+
+    # When
+    error = error_from_stderr(stderr_text, 1)
+
+    # Then
+    assert (error.code, error.message) == ("canceled", "stopped after 4 of 9")
+
+
+async def test_run_gives_the_binary_an_empty_stdin_when_there_are_no_lines(
+    fake_asbctl: FakeFactory,
+):
+    # Given
+    fake = fake_asbctl(is_stdin_read=True)
+
+    # When
+    [output async for output in run("peek", timeout_seconds=20)]
+
+    # Then
+    assert fake.read_stdin() == ""
+
+
+async def test_run_once_applies_the_timeout(fake_asbctl: FakeFactory):
+    # Given
+    fake_asbctl(stdout='{"n": 1}\n', sleep_seconds=60)
+
+    # When
+    with pytest.raises(TimeoutError):
+        await run_once("dlq", "summary", timeout_seconds=0.7)
+
+    # Then
+
+
+async def test_run_once_forwards_the_flags_and_the_stdin_lines(fake_asbctl: FakeFactory):
+    # Given
+    fake = fake_asbctl(stdout='{"n": 1}\n', is_stdin_read=True)
+
+    # When
+    await run_once("send", stdin_lines=["line-1"], queue="q-1")
+
+    # Then
+    assert fake.read_arguments() == ["send", "--queue", "q-1", "--output", "json"]
+    assert fake.read_stdin() == "line-1\n"
+
+
+class FakeProcess:
+    returncode = None
+
+    def __init__(self) -> None:
+        self.has_waited = False
+
+    def kill(self) -> None:
+        raise ProcessLookupError
+
+    async def wait(self) -> int:
+        self.has_waited = True
+        return 0
+
+
+async def test_stop_process_waits_for_a_process_that_exited_before_it_could_be_killed():
+    # Given
+    process = FakeProcess()
+
+    # When
+    await _stop_process(cast("asyncio.subprocess.Process", process))
+
+    # Then
+    assert process.has_waited
+
+
+class FakeStreamWriter:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+        self.is_closed = False
+
+    def write(self, data: bytes) -> None:
+        self.data = data
+
+    async def drain(self) -> None:
+        raise self.error
+
+    def close(self) -> None:
+        self.is_closed = True
+
+    async def wait_closed(self) -> None:
+        return None
+
+
+@pytest.mark.parametrize(
+    "error", [BrokenPipeError(), ConnectionResetError()], ids=["broken-pipe", "connection-reset"]
+)
+async def test_write_lines_stops_quietly_and_closes_the_stream_when_the_process_has_gone(
+    error: Exception,
+):
+    # Given
+    writer = FakeStreamWriter(error)
+
+    # When
+    await _write_lines(cast("asyncio.StreamWriter", writer), ["first"])
+
+    # Then
+    assert writer.is_closed
+    assert writer.data == b"first\n"
+
+
+async def test_read_text_replaces_bytes_that_are_not_utf8():
+    # Given
+    reader = asyncio.StreamReader()
+    reader.feed_data(b"ok \xff")
+    reader.feed_eof()
+
+    # When
+    text = await _read_text(reader)
+
+    # Then
+    assert text == "ok \ufffd"

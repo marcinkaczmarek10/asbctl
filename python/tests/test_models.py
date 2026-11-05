@@ -97,7 +97,7 @@ def test_message_from_record_reads_every_field():
     assert message.payload_type_id == "Invoice"
 
 
-@pytest.mark.parametrize("body", ["a b c", "not base64!", "AQI"])
+@pytest.mark.parametrize("body", ["a b c", "not base64!", "AQI", "QQ==!"])
 def test_message_from_record_rejects_a_body_that_is_not_valid_base64(body: str):
     # Given
     record = {"schema": 1, "body": body}
@@ -361,3 +361,14 @@ def test_send_result_from_record_leaves_the_optional_fields_empty():
 
     # Then
     assert (result.message_id, result.error) == (None, None)
+
+
+def test_message_from_record_reads_a_missing_body_as_empty_bytes():
+    # Given
+    record = {"schema": 1}
+
+    # When
+    message = message_from_record(record)
+
+    # Then
+    assert message.body == b""

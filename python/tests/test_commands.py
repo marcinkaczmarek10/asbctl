@@ -1,3 +1,4 @@
+import inspect
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -378,3 +379,214 @@ async def test_send_raises_a_usage_error_that_names_the_bad_line(fake_asbctl: Fa
     # Then
     assert raised.value.exit_code == 2
     assert "line 2" in raised.value.message
+
+
+async def consume(call_result):
+    if inspect.isasyncgen(call_result):
+        return [item async for item in call_result]
+    return await call_result
+
+
+async def test_peek_forwards_every_argument(fake_asbctl: FakeFactory):
+    # Given
+    fake = fake_asbctl()
+
+    # When
+    await consume(
+        peek(
+            namespace="ns-a",
+            queue="q-a",
+            topic="t-a",
+            subscription="s-a",
+            is_dead_letter=True,
+            max_messages=3,
+            from_sequence=9,
+            payload_type_id="P-a",
+        )
+    )
+
+    # Then
+    assert fake.read_arguments() == [
+        "peek", "--namespace", "ns-a", "--queue", "q-a", "--topic", "t-a",
+        "--subscription", "s-a", "--dlq", "--max", "3", "--from-sequence", "9",
+        "--payload-type-id", "P-a", "--output", "json",
+    ]  # fmt: skip
+
+
+async def test_export_forwards_every_argument(fake_asbctl: FakeFactory):
+    # Given
+    fake = fake_asbctl()
+
+    # When
+    await consume(
+        export(
+            namespace="ns-b",
+            queue="q-b",
+            topic="t-b",
+            subscription="s-b",
+            is_dead_letter=True,
+            max_messages=4,
+            payload_type_id="P-b",
+        )
+    )
+
+    # Then
+    assert fake.read_arguments() == [
+        "export", "--namespace", "ns-b", "--queue", "q-b", "--topic", "t-b",
+        "--subscription", "s-b", "--dlq", "--max", "4", "--payload-type-id", "P-b",
+        "--output", "json",
+    ]  # fmt: skip
+
+
+async def test_export_to_file_forwards_every_argument(
+    fake_asbctl: FakeFactory, read_contract: Callable[[str], str]
+):
+    # Given
+    fake = fake_asbctl(stdout=read_contract("export_result.json"))
+
+    # When
+    await export_to_file(
+        "out-c.ndjson",
+        namespace="ns-c",
+        queue="q-c",
+        topic="t-c",
+        subscription="s-c",
+        is_dead_letter=True,
+        max_messages=5,
+        payload_type_id="P-c",
+        can_overwrite=True,
+    )
+
+    # Then
+    assert fake.read_arguments() == [
+        "export", "--namespace", "ns-c", "--queue", "q-c", "--topic", "t-c",
+        "--subscription", "s-c", "--dlq", "--max", "5", "--payload-type-id", "P-c",
+        "--file", "out-c.ndjson", "--force", "--output", "json",
+    ]  # fmt: skip
+
+
+async def test_dlq_summary_forwards_every_argument(
+    fake_asbctl: FakeFactory, read_contract: Callable[[str], str]
+):
+    # Given
+    fake = fake_asbctl(stdout=read_contract("summary.json"))
+
+    # When
+    await dlq_summary(
+        namespace="ns-d", queue="q-d", topic="t-d", subscription="s-d", max_messages=6
+    )
+
+    # Then
+    assert fake.read_arguments() == [
+        "dlq", "summary", "--namespace", "ns-d", "--queue", "q-d", "--topic", "t-d",
+        "--subscription", "s-d", "--max", "6", "--output", "json",
+    ]  # fmt: skip
+
+
+async def test_send_plan_forwards_every_argument(
+    fake_asbctl: FakeFactory, read_contract: Callable[[str], str]
+):
+    # Given
+    fake = fake_asbctl(stdout=read_contract("send_plan.json"), is_stdin_read=True)
+
+    # When
+    await send_plan(
+        [{"body": ""}],
+        namespace="ns-e",
+        queue="q-e",
+        topic="t-e",
+        is_message_id_replaced=True,
+    )
+
+    # Then
+    assert fake.read_arguments() == [
+        "send", "--namespace", "ns-e", "--queue", "q-e", "--topic", "t-e",
+        "--new-message-id", "--output", "json",
+    ]  # fmt: skip
+
+
+async def test_send_forwards_every_argument(fake_asbctl: FakeFactory):
+    # Given
+    fake = fake_asbctl(is_stdin_read=True)
+
+    # When
+    await consume(
+        send(
+            [{"body": ""}],
+            namespace="ns-f",
+            queue="q-f",
+            topic="t-f",
+            rate_per_second=8,
+            is_message_id_replaced=True,
+        )
+    )
+
+    # Then
+    assert fake.read_arguments() == [
+        "send", "--namespace", "ns-f", "--queue", "q-f", "--topic", "t-f", "--rate", "8",
+        "--new-message-id", "--yes", "--output", "json",
+    ]  # fmt: skip
+
+
+async def test_helpers_add_no_flag_for_an_argument_that_was_left_out(
+    fake_asbctl: FakeFactory, read_contract: Callable[[str], str]
+):
+    # Given
+    fake = fake_asbctl(stdout=read_contract("send_plan.json"), is_stdin_read=True)
+
+    # When
+    await send_plan([{"body": ""}])
+    plan_arguments = fake.read_arguments()
+    fake_asbctl(is_stdin_read=True)
+    await consume(send([{"body": ""}]))
+    send_arguments = fake.read_arguments()
+    await consume(peek())
+    peek_arguments = fake.read_arguments()
+    await consume(export())
+    export_arguments = fake.read_arguments()
+
+    # Then
+    assert plan_arguments == ["send", "--output", "json"]
+    assert send_arguments == ["send", "--yes", "--output", "json"]
+    assert peek_arguments == ["peek", "--output", "json"]
+    assert export_arguments == ["export", "--output", "json"]
+
+
+async def test_export_to_file_and_dlq_summary_add_no_optional_flag_by_default(
+    fake_asbctl: FakeFactory, read_contract: Callable[[str], str]
+):
+    # Given
+    fake = fake_asbctl(stdout=read_contract("export_result.json"))
+
+    # When
+    await export_to_file("out-g.ndjson")
+    export_arguments = fake.read_arguments()
+    fake_asbctl(stdout=read_contract("summary.json"))
+    await dlq_summary()
+
+    # Then
+    assert export_arguments == ["export", "--file", "out-g.ndjson", "--output", "json"]
+    assert fake.read_arguments() == ["dlq", "summary", "--output", "json"]
+
+
+async def test_every_helper_applies_the_timeout(fake_asbctl: FakeFactory):
+    # Given
+    fake_asbctl(stdout='{"schema":1}\n', sleep_seconds=60)
+    calls = [
+        lambda: peek(timeout_seconds=0.5),
+        lambda: export(timeout_seconds=0.5),
+        lambda: export_to_file("out", timeout_seconds=0.5),
+        lambda: dlq_summary(timeout_seconds=0.5),
+        lambda: send([], timeout_seconds=0.5),
+        lambda: send_plan([], timeout_seconds=0.5),
+    ]
+
+    # When
+    outcomes = []
+    for call in calls:
+        with pytest.raises(TimeoutError):
+            await consume(call())
+        outcomes.append("timed out")
+
+    # Then
+    assert outcomes == ["timed out"] * len(calls)

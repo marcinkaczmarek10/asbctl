@@ -9,7 +9,11 @@ from typing import NamedTuple
 
 import pytest
 
-CONTRACT_DIRECTORY = Path(__file__).resolve().parents[2] / "testdata" / "contract"
+CONTRACT_DIRECTORY = next(
+    parent / "testdata" / "contract"
+    for parent in Path(__file__).resolve().parents
+    if (parent / "testdata" / "contract").is_dir()
+)
 
 FAKE_SCRIPT = textwrap.dedent(
     """\
