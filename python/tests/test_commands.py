@@ -131,18 +131,18 @@ async def test_dlq_summary_parses_the_contract_summary(
     ]  # fmt: skip
     assert summary.schema == 1
     assert summary.peeked == 4
-    assert summary.partial is True
+    assert summary.is_partial is True
     assert summary.entity == Entity(
-        available=True,
+        is_available=True,
         queue="orders",
         active_messages=12,
         dead_letter_messages=40,
         scheduled_messages=0,
         transfer_dead_letter_messages=0,
         max_delivery_count=10,
-        lock_duration="PT1M",
-        requires_duplicate_detection=True,
-        duplicate_detection_window="PT10M",
+        lock_duration_iso8601="PT1M",
+        is_duplicate_detection_required=True,
+        duplicate_detection_window_iso8601="PT10M",
     )
     assert summary.groups == (
         Group(
@@ -178,9 +178,9 @@ async def test_dlq_summary_keeps_the_entity_unavailable_when_the_service_hid_its
     summary = await dlq_summary(topic="events-t", subscription="billing-s")
 
     # Then
-    assert summary.entity == Entity(available=False, topic="events", subscription="billing")
+    assert summary.entity == Entity(is_available=False, topic="events", subscription="billing")
     assert summary.entity.dead_letter_messages is None
-    assert summary.partial is True
+    assert summary.is_partial is True
 
 
 async def test_export_yields_the_records_and_maps_its_arguments(
@@ -220,7 +220,7 @@ async def test_export_to_file_returns_the_result_and_maps_its_arguments(
     result = await export_to_file(file_path, namespace="n-test", queue="q-test", can_overwrite=True)
 
     # Then
-    assert result == ExportResult(schema=1, exported=4, file="orders.ndjson", partial=True)
+    assert result == ExportResult(schema=1, exported=4, file_path="orders.ndjson", is_partial=True)
     assert fake.read_arguments() == [
         "export", "--namespace", "n-test", "--queue", "q-test", "--file", str(file_path),
         "--force", "--output", "json",
@@ -258,7 +258,7 @@ async def test_send_plan_returns_the_plan_and_passes_no_yes(
         schema=1,
         total=3,
         payload_types=(PayloadTypeCount("OrderPlaced", 2), PayloadTypeCount("", 1)),
-        dry_run=False,
+        is_dry_run=False,
         queue="orders",
     )
     assert fake.read_arguments() == [
@@ -303,8 +303,8 @@ async def test_send_writes_the_records_to_stdin_and_yields_the_results(
         ),
         SendResult(schema=1, line=3, status="sent"),
     ]
-    assert results[0].sent
-    assert not results[1].sent
+    assert results[0].is_sent
+    assert not results[1].is_sent
     assert fake.read_arguments() == [
         "send", "--namespace", "n-test", "--topic", "t-test", "--rate", "13", "--yes",
         "--output", "json",

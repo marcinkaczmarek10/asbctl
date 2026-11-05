@@ -45,16 +45,16 @@ async def test_dlq_resend_plan_parses_the_contract_plan_and_passes_no_yes(
         target=Location(queue="orders"),
         selected=4,
         groups=(DlqGroup("Order", "Poison", 3), DlqGroup("", "Expired", 1)),
-        snapshot="asbctl-snapshot-orders-20261105T143005Z.ndjson",
+        snapshot_path="asbctl-snapshot-orders-20261105T143005Z.ndjson",
         dedupe=Dedupe(
-            enabled=True,
+            is_enabled=True,
             window_seconds=600,
-            assumed=False,
+            is_assumed=False,
             repeated_in_selection=2,
             in_ledger=1,
         ),
         warnings=(),
-        dry_run=False,
+        is_dry_run=False,
     )
     assert fake.read_arguments() == [
         "dlq", "resend", "--namespace", "n-test", "--queue", "orders-q",
@@ -79,7 +79,7 @@ async def test_dlq_purge_plan_parses_a_plan_without_target_or_dedupe(
     assert plan.source == Location(topic="events", subscription="billing")
     assert plan.target is None
     assert plan.dedupe is None
-    assert plan.dry_run is True
+    assert plan.is_dry_run is True
     assert plan.selected == 4
 
 
@@ -134,10 +134,10 @@ async def test_dlq_resend_yields_each_result_then_the_summary(
         sent_not_completed=1,
         skipped=1,
         bounced=1,
-        stopped_on_bounce=True,
+        is_stopped_on_bounce=True,
         not_reached=2,
-        scan_limit_reached=True,
-        snapshot="snap.ndjson",
+        is_scan_limit_reached=True,
+        snapshot_path="snap.ndjson",
     )
     assert fake.read_arguments() == [
         "dlq", "resend", "--namespace", "n-test", "--topic", "t-test", "--subscription", "s-test",
@@ -213,8 +213,8 @@ async def test_dlq_purge_yields_each_result_then_the_summary(
         purged=1,
         failed=1,
         not_reached=0,
-        scan_limit_reached=False,
-        snapshot="snap.ndjson",
+        is_scan_limit_reached=False,
+        snapshot_path="snap.ndjson",
     )
     assert fake.read_arguments() == [
         "dlq", "purge", "--namespace", "n-test", "--queue", "q-test", "--reason", "Expired",

@@ -1,15 +1,13 @@
-"""Typed helpers for dlq resend and dlq purge, as described in docs/dead-letter.md."""
+"""Typed helpers for dlq resend and purge, as described in docs/dead-letter.md."""
 
 import contextlib
 from collections.abc import AsyncGenerator, Mapping
-from dataclasses import dataclass
-from typing import Any
+from typing import Any, NamedTuple
 
 from asbctl.core import run, run_once
 
 
-@dataclass(frozen=True, slots=True)
-class Location:
+class Location(NamedTuple):
     """A queue, or a topic and optionally one of its subscriptions."""
 
     queue: str | None = None
@@ -17,8 +15,7 @@ class Location:
     subscription: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class DlqGroup:
+class DlqGroup(NamedTuple):
     """Selected messages that share a payload type and a reason. An empty id means no property."""
 
     payload_type_id: str
@@ -26,22 +23,20 @@ class DlqGroup:
     count: int
 
 
-@dataclass(frozen=True, slots=True)
-class Dedupe:
+class Dedupe(NamedTuple):
     """How the duplicate detection guard treats the selection.
 
-    assumed means that the settings were unreadable.
+    is_assumed means that the settings were unreadable.
     """
 
-    enabled: bool
-    assumed: bool
+    is_enabled: bool
+    is_assumed: bool
     repeated_in_selection: int
     in_ledger: int
     window_seconds: int = 0
 
 
-@dataclass(frozen=True, slots=True)
-class DlqPlan:
+class DlqPlan(NamedTuple):
     """What a dlq command would do. target and dedupe are only set for a resend."""
 
     schema: int
@@ -50,14 +45,13 @@ class DlqPlan:
     selected: int
     groups: tuple[DlqGroup, ...]
     warnings: tuple[str, ...]
-    dry_run: bool
-    snapshot: str | None = None
+    is_dry_run: bool
+    snapshot_path: str | None = None
     target: Location | None = None
     dedupe: Dedupe | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class DlqResult:
+class DlqResult(NamedTuple):
     """The outcome for one selected message.
 
     status is resent, failed, sent_not_completed or skipped_duplicate_window for a resend, and
@@ -71,8 +65,7 @@ class DlqResult:
     error: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class ResendSummary:
+class ResendSummary(NamedTuple):
     """The last object of a resend.
 
     not_reached counts selected messages that were never received.
@@ -84,43 +77,49 @@ class ResendSummary:
     sent_not_completed: int
     skipped: int
     bounced: int
-    stopped_on_bounce: bool
+    is_stopped_on_bounce: bool
     not_reached: int
-    scan_limit_reached: bool
-    snapshot: str
+    is_scan_limit_reached: bool
+    snapshot_path: str
 
 
-@dataclass(frozen=True, slots=True)
-class PurgeSummary:
+class PurgeSummary(NamedTuple):
     """The last object of a purge."""
 
     schema: int
     purged: int
     failed: int
     not_reached: int
-    scan_limit_reached: bool
-    snapshot: str
+    is_scan_limit_reached: bool
+    snapshot_path: str
 
 
-def plan_from_record(record: Mapping[str, Any]) -> DlqPlan:
-    """Build a Plan from the one JSON object that a dlq command prints without --yes."""
-    dedupe = record.get("dedupe")
+def dlq_plan_from_record(record: Mapping[str, Any]) -> DlqPlan:
+    """Build a DlqPlan from the one JSON object that a dlq command prints without --yes."""
     target = record.get("target")
+    dedupe = record.get("dedupe")
     return DlqPlan(
         schema=record["schema"],
         command=record["command"],
-        source=Location(**record["source"]),
+        source=_location_from_record(record["source"]),
         selected=record["selected"],
-        groups=tuple(DlqGroup(**group) for group in record["groups"]),
+        groups=tuple(
+            DlqGroup(
+                payload_type_id=group["payload_type_id"],
+                dead_letter_reason=group["dead_letter_reason"],
+                count=group["count"],
+            )
+            for group in record["groups"]
+        ),
         warnings=tuple(record["warnings"]),
-        dry_run=record["dry_run"],
-        snapshot=record.get("snapshot"),
-        target=None if target is None else Location(**target),
-        dedupe=None if dedupe is None else Dedupe(**dedupe),
+        is_dry_run=record["dry_run"],
+        snapshot_path=record.get("snapshot"),
+        target=None if target is None else _location_from_record(target),
+        dedupe=None if dedupe is None else _dedupe_from_record(dedupe),
     )
 
 
-def result_from_record(record: Mapping[str, Any]) -> DlqResult:
+def dlq_result_from_record(record: Mapping[str, Any]) -> DlqResult:
     """Build a DlqResult from one message line."""
     return DlqResult(
         schema=record["schema"],
@@ -134,15 +133,51 @@ def result_from_record(record: Mapping[str, Any]) -> DlqResult:
 def resend_event_from_record(record: Mapping[str, Any]) -> DlqResult | ResendSummary:
     """Build a DlqResult for a message line, or the ResendSummary for the closing object."""
     if record.get("type") != "summary":
-        return result_from_record(record)
-    return ResendSummary(**{name: value for name, value in record.items() if name != "type"})
+        return dlq_result_from_record(record)
+    return ResendSummary(
+        schema=record["schema"],
+        resent=record["resent"],
+        failed=record["failed"],
+        sent_not_completed=record["sent_not_completed"],
+        skipped=record["skipped"],
+        bounced=record["bounced"],
+        is_stopped_on_bounce=record["stopped_on_bounce"],
+        not_reached=record["not_reached"],
+        is_scan_limit_reached=record["scan_limit_reached"],
+        snapshot_path=record["snapshot"],
+    )
 
 
 def purge_event_from_record(record: Mapping[str, Any]) -> DlqResult | PurgeSummary:
     """Build a DlqResult for a message line, or the PurgeSummary for the closing object."""
     if record.get("type") != "summary":
-        return result_from_record(record)
-    return PurgeSummary(**{name: value for name, value in record.items() if name != "type"})
+        return dlq_result_from_record(record)
+    return PurgeSummary(
+        schema=record["schema"],
+        purged=record["purged"],
+        failed=record["failed"],
+        not_reached=record["not_reached"],
+        is_scan_limit_reached=record["scan_limit_reached"],
+        snapshot_path=record["snapshot"],
+    )
+
+
+def _location_from_record(record: Mapping[str, Any]) -> Location:
+    return Location(
+        queue=record.get("queue"),
+        topic=record.get("topic"),
+        subscription=record.get("subscription"),
+    )
+
+
+def _dedupe_from_record(record: Mapping[str, Any]) -> Dedupe:
+    return Dedupe(
+        is_enabled=record["enabled"],
+        is_assumed=record["assumed"],
+        repeated_in_selection=record["repeated_in_selection"],
+        in_ledger=record["in_ledger"],
+        window_seconds=record.get("window_seconds", 0),
+    )
 
 
 def _duration_flag(value: float | str | None) -> str | None:
@@ -183,7 +218,7 @@ async def dlq_resend_plan(
         snapshot=snapshot_path,
         dry_run=is_dry_run,
     )
-    return plan_from_record(record)
+    return dlq_plan_from_record(record)
 
 
 async def dlq_resend(
@@ -274,7 +309,7 @@ async def dlq_purge_plan(
         snapshot=snapshot_path,
         dry_run=is_dry_run,
     )
-    return plan_from_record(record)
+    return dlq_plan_from_record(record)
 
 
 async def dlq_purge(
