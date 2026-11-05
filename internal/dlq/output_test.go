@@ -167,7 +167,7 @@ func TestWriteSummaries(t *testing.T) {
 	}{
 		{
 			name: "resend json", write: func(b *bytes.Buffer) error { return WriteResendSummary(b, export.FormatJSON, resend) },
-			want: []string{`{"schema":1,"type":"summary","resent":8,"failed":1,"sent_not_completed":2,"skipped":3,"bounced":4,"stopped_on_bounce":true,"not_reached":5,"snapshot":"snap"}`},
+			want: []string{`{"schema":1,"type":"summary","resent":8,"failed":1,"sent_not_completed":2,"skipped":3,"bounced":4,"stopped_on_bounce":true,"not_reached":5,"scan_limit_reached":false,"snapshot":"snap"}`},
 		},
 		{
 			name: "resend table", write: func(b *bytes.Buffer) error { return WriteResendSummary(b, export.FormatTable, resend) },
@@ -175,7 +175,7 @@ func TestWriteSummaries(t *testing.T) {
 		},
 		{
 			name: "purge json", write: func(b *bytes.Buffer) error { return WritePurgeSummary(b, export.FormatJSON, purge) },
-			want: []string{`{"schema":1,"type":"summary","purged":8,"failed":1,"not_reached":2,"snapshot":"snap"}`},
+			want: []string{`{"schema":1,"type":"summary","purged":8,"failed":1,"not_reached":2,"scan_limit_reached":false,"snapshot":"snap"}`},
 		},
 		{
 			name: "purge table", write: func(b *bytes.Buffer) error { return WritePurgeSummary(b, export.FormatTable, purge) },
@@ -290,5 +290,22 @@ func TestWritePurgeSummaryTableWithoutAnythingNotReached(t *testing.T) {
 
 	if want := "Purged 3, failed 0.\nSnapshot: snap\n"; out.String() != want {
 		t.Errorf("summary = %q, want %q", out.String(), want)
+	}
+}
+
+func TestSummaryTablesSayWhenTheScanLimitStoppedTheRun(t *testing.T) {
+	var resend, purge bytes.Buffer
+
+	_ = WriteResendSummary(&resend, export.FormatTable, ResendSummary{NotReached: 3, ScanLimitReached: true, Snapshot: "s"})
+	_ = WritePurgeSummary(&purge, export.FormatTable, PurgeSummary{NotReached: 3, ScanLimitReached: true, Snapshot: "s"})
+	var plain bytes.Buffer
+	_ = WritePurgeSummary(&plain, export.FormatTable, PurgeSummary{NotReached: 3, Snapshot: "s"})
+
+	want := "3 selected messages were not reached. The run stopped at --max-scan: run the command again for the rest.\n"
+	if !strings.Contains(resend.String(), want) || !strings.Contains(purge.String(), want) {
+		t.Errorf("resend = %q, purge = %q, want both to contain %q", resend.String(), purge.String(), want)
+	}
+	if strings.Contains(plain.String(), "--max-scan") {
+		t.Errorf("summary = %q, want no scan-limit sentence when the cap was not what stopped the run", plain.String())
 	}
 }

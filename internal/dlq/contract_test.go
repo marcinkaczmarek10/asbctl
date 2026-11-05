@@ -52,7 +52,7 @@ func contractFiles(t *testing.T) map[string]string {
 			t.Fatalf("WriteResult() error = %v", err)
 		}
 	}
-	summary := ResendSummary{Schema: 1, Type: "summary", Resent: 1, Failed: 1, SentNotCompleted: 1, Skipped: 1, Bounced: 1, StoppedOnBounce: true, NotReached: 2, Snapshot: "snap.ndjson"}
+	summary := ResendSummary{Schema: 1, Type: "summary", Resent: 1, Failed: 1, SentNotCompleted: 1, Skipped: 1, Bounced: 1, StoppedOnBounce: true, NotReached: 2, ScanLimitReached: true, Snapshot: "snap.ndjson"}
 	if err := WriteResendSummary(resendResults, export.FormatJSON, summary); err != nil {
 		t.Fatalf("WriteResendSummary() error = %v", err)
 	}

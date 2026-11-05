@@ -20,7 +20,8 @@ type Result struct {
 }
 
 // ResendSummary closes a resend run. NotReached counts selected messages that the run never received, for
-// instance because they sat behind more messages than one lock duration could read through.
+// instance because they sat behind more messages than one lock duration could read through, or because the run
+// reached the hold cap, which ScanLimitReached says.
 type ResendSummary struct {
 	Schema           int    `json:"schema"`
 	Type             string `json:"type"`
@@ -31,17 +32,19 @@ type ResendSummary struct {
 	Bounced          int    `json:"bounced"`
 	StoppedOnBounce  bool   `json:"stopped_on_bounce"`
 	NotReached       int    `json:"not_reached"`
+	ScanLimitReached bool   `json:"scan_limit_reached"`
 	Snapshot         string `json:"snapshot"`
 }
 
 // PurgeSummary closes a purge run.
 type PurgeSummary struct {
-	Schema     int    `json:"schema"`
-	Type       string `json:"type"`
-	Purged     int    `json:"purged"`
-	Failed     int    `json:"failed"`
-	NotReached int    `json:"not_reached"`
-	Snapshot   string `json:"snapshot"`
+	Schema           int    `json:"schema"`
+	Type             string `json:"type"`
+	Purged           int    `json:"purged"`
+	Failed           int    `json:"failed"`
+	NotReached       int    `json:"not_reached"`
+	ScanLimitReached bool   `json:"scan_limit_reached"`
+	Snapshot         string `json:"snapshot"`
 }
 
 func newResendSummary(snapshot string) ResendSummary {

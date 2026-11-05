@@ -2,6 +2,7 @@ package dlq
 
 import (
 	"context"
+	"log/slog"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
@@ -19,46 +20,63 @@ type candidate struct {
 	Message *azservicebus.ReceivedMessage
 }
 
+// drainOptions tune a drain. MaxHeld caps how many messages a run holds locked, and zero means no cap.
+type drainOptions struct {
+	BatchSize int
+	MaxHeld   int
+	Logger    *slog.Logger
+}
+
+// drainResult says how many selected messages a drain handled, and whether it stopped at the hold cap.
+type drainResult struct {
+	Handled     int
+	ScanLimited bool
+}
+
 // drain receives the dead-letter queue under peek-lock and hands the selected messages to process, batch by batch.
 //
 // A message that is not acted on stays locked until the run ends, and is only then abandoned. Abandoning at once
 // would put it back at the head of the queue, and the next receive would return it again before any message
 // behind it. The lock expires by itself after the lock duration, which bounds how far one run can read through
-// messages it skips. drain stops when every selected message is handled, when a receive returns nothing, or when
-// a receive returns only messages it has seen before.
+// messages it skips. The hold cap bounds the memory: the SDK keeps the whole received message behind a lock, body
+// included, and offers no way to drop it. drain stops when every selected message is handled, when a receive
+// returns nothing, when a receive returns only messages it has seen before, or when the hold cap is reached.
 func drain(
 	ctx context.Context,
 	receiver bus.SettlingReceiver,
-	batchSize int,
+	options drainOptions,
 	selected map[int64]Entry,
 	process func(ctx context.Context, candidates []candidate, hold func(*azservicebus.ReceivedMessage)) (stop bool, err error),
-) (handled int, err error) {
+) (result drainResult, err error) {
 	var held []*azservicebus.ReceivedMessage
-	defer func() { releaseHeld(ctx, receiver, held) }()
+	defer func() { releaseHeld(ctx, receiver, options.Logger, held) }()
 	hold := func(message *azservicebus.ReceivedMessage) { held = append(held, message) }
 
 	seen := make(map[int64]struct{})
-	for handled < len(selected) {
-		batch, err := bus.ReceiveBatch(ctx, receiver, batchSize)
+	for result.Handled < len(selected) {
+		batch, err := bus.ReceiveBatch(ctx, receiver, options.BatchSize)
 		if err != nil {
-			return handled, err
+			return result, err
 		}
 
 		candidates, sawNew := sortBatch(batch, selected, seen, hold)
 		if !sawNew {
-			return handled, nil
+			return result, nil
 		}
-		if len(candidates) == 0 {
-			continue
-		}
-		handled += len(candidates)
+		result.Handled += len(candidates)
 
-		stop, err := process(ctx, candidates, hold)
-		if err != nil || stop {
-			return handled, err
+		if len(candidates) > 0 {
+			stop, err := process(ctx, candidates, hold)
+			if err != nil || stop {
+				return result, err
+			}
+		}
+		if options.MaxHeld > 0 && len(held) >= options.MaxHeld && result.Handled < len(selected) {
+			result.ScanLimited = true
+			return result, nil
 		}
 	}
-	return handled, nil
+	return result, nil
 }
 
 // sortBatch splits a received batch into the selected messages seen for the first time, which it returns, and
@@ -88,15 +106,20 @@ func sortBatch(
 }
 
 // releaseHeld abandons what a run held back. A lock that already expired makes Abandon fail, which is fine: the
-// message is available again either way. It runs on its own deadline so that a cancelled run still releases.
-func releaseHeld(ctx context.Context, receiver bus.SettlingReceiver, held []*azservicebus.ReceivedMessage) {
+// message is available again either way, so the failures are counted and logged once. It runs on its own deadline
+// so that a cancelled run still releases.
+func releaseHeld(ctx context.Context, receiver bus.SettlingReceiver, logger *slog.Logger, held []*azservicebus.ReceivedMessage) {
 	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()
+
+	failed := 0
 	for _, message := range held {
-		if releaseCtx.Err() != nil {
-			return
+		if releaseCtx.Err() != nil || receiver.AbandonMessage(releaseCtx, message, nil) != nil {
+			failed++
 		}
-		_ = receiver.AbandonMessage(releaseCtx, message, nil) // the lock expires by itself if this fails.
+	}
+	if failed > 0 {
+		logger.WarnContext(ctx, "held messages were not abandoned and return when their locks expire", "failed", failed, "held", len(held))
 	}
 }
 

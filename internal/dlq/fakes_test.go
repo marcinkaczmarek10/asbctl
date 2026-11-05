@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"testing"
 	"time"
@@ -41,6 +42,7 @@ type fakeQueue struct {
 	completed   []int64
 	abandoned   []int64
 	completeErr map[int64]error
+	abandonErr  map[int64]error
 	receives    int
 	peeks       int
 	receiveErr  error
@@ -48,7 +50,7 @@ type fakeQueue struct {
 }
 
 func newFakeQueue(messages ...*azservicebus.ReceivedMessage) *fakeQueue {
-	return &fakeQueue{messages: messages, locked: map[int64]bool{}, completeErr: map[int64]error{}}
+	return &fakeQueue{messages: messages, locked: map[int64]bool{}, completeErr: map[int64]error{}, abandonErr: map[int64]error{}}
 }
 
 func (q *fakeQueue) add(message *azservicebus.ReceivedMessage) {
@@ -88,8 +90,12 @@ func (q *fakeQueue) CompleteMessage(_ context.Context, message *azservicebus.Rec
 }
 
 func (q *fakeQueue) AbandonMessage(_ context.Context, message *azservicebus.ReceivedMessage, _ *azservicebus.AbandonMessageOptions) error {
-	q.abandoned = append(q.abandoned, *message.SequenceNumber)
-	delete(q.locked, *message.SequenceNumber)
+	seq := *message.SequenceNumber
+	if err := q.abandonErr[seq]; err != nil {
+		return err
+	}
+	q.abandoned = append(q.abandoned, seq)
+	delete(q.locked, seq)
 	return nil
 }
 
@@ -197,7 +203,7 @@ func newResendFixture(t *testing.T, queue *fakeQueue, filter Filter) *resendFixt
 	t.Helper()
 	ledger, path := openTestLedger(t)
 	f := &resendFixture{queue: queue, sender: &fakeSender{failing: map[int]error{}}, clock: &fakeClock{now: runStart}, ledger: ledger, path: path}
-	f.deps = ResendDeps{Receiver: queue, Sender: f.sender, Peeker: queue, Ledger: ledger, Now: f.clock.Now, Sleep: f.clock.Sleep}
+	f.deps = ResendDeps{Receiver: queue, Sender: f.sender, Peeker: queue, Ledger: ledger, Now: f.clock.Now, Sleep: f.clock.Sleep, Logger: discardLogger}
 	f.params = ResendParams{
 		Selection: selectionOf(t, queue, filter), Snapshot: "snap.ndjson", Namespace: "ns.servicebus.windows.net", Target: "queue:orders",
 		Wave: 100, BatchSize: 100, StopOnBounce: 5,
@@ -226,3 +232,5 @@ func (f *resendFixture) statuses() []string {
 }
 
 var errBoom = errors.New("boom")
+
+var discardLogger = slog.New(slog.DiscardHandler)

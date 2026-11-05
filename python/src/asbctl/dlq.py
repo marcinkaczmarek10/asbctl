@@ -85,6 +85,7 @@ class ResendSummary:
     bounced: int
     stopped_on_bounce: bool
     not_reached: int
+    scan_limit_reached: bool
     snapshot: str
 
 
@@ -96,6 +97,7 @@ class PurgeSummary:
     purged: int
     failed: int
     not_reached: int
+    scan_limit_reached: bool
     snapshot: str
 
 

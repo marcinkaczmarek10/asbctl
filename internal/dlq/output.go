@@ -228,9 +228,7 @@ func WriteResendSummary(out io.Writer, format export.Format, summary ResendSumma
 	if summary.StoppedOnBounce {
 		fmt.Fprintln(out, "Stopped before the next wave because too many resent messages came back to the dead-letter queue.")
 	}
-	if summary.NotReached > 0 {
-		fmt.Fprintf(out, "%d selected messages were not reached.\n", summary.NotReached)
-	}
+	writeNotReached(out, summary.NotReached, summary.ScanLimitReached)
 	if summary.SentNotCompleted > 0 {
 		fmt.Fprintln(out, "Messages that were sent but not completed are still in the dead-letter queue and were sent already.")
 	}
@@ -244,11 +242,20 @@ func WritePurgeSummary(out io.Writer, format export.Format, summary PurgeSummary
 		return encodeLine(out, summary, "summary")
 	}
 	fmt.Fprintf(out, "Purged %d, failed %d.\n", summary.Purged, summary.Failed)
-	if summary.NotReached > 0 {
-		fmt.Fprintf(out, "%d selected messages were not reached.\n", summary.NotReached)
-	}
+	writeNotReached(out, summary.NotReached, summary.ScanLimitReached)
 	fmt.Fprintf(out, "Snapshot: %s\n", summary.Snapshot)
 	return nil
+}
+
+func writeNotReached(out io.Writer, notReached int, scanLimitReached bool) {
+	if notReached == 0 {
+		return
+	}
+	fmt.Fprintf(out, "%d selected messages were not reached.", notReached)
+	if scanLimitReached {
+		fmt.Fprint(out, " The run stopped at --max-scan: run the command again for the rest.")
+	}
+	fmt.Fprintln(out)
 }
 
 func encodeLine(out io.Writer, value any, what string) error {

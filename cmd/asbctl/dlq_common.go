@@ -14,6 +14,9 @@ import (
 	"github.com/marcinkaczmarek10/asbctl/internal/export"
 )
 
+// defaultMaxScan is how many messages a run holds locked while it reads past the ones it skips.
+const defaultMaxScan = 50000
+
 // selectionConfig holds what dlq resend and dlq purge share: where the messages are, which of them, and whether
 // to act.
 type selectionConfig struct {
@@ -21,6 +24,7 @@ type selectionConfig struct {
 	target    bus.Target
 	filter    dlq.Filter
 	max       int
+	maxScan   int
 	snapshot  string
 	dryRun    bool
 	yes       bool
@@ -38,6 +42,7 @@ func bindSelectionFlags(fs *flag.FlagSet, cfg *selectionConfig, output *string) 
 	fs.StringVar(&cfg.filter.PayloadTypeID, "payload-type-id", "", "only act on messages with this PayloadTypeId property")
 	fs.StringVar(&cfg.filter.Reason, "reason", "", "only act on messages with this dead-letter reason")
 	fs.IntVar(&cfg.max, "max", 0, "act on at most this many messages (0 is all that match)")
+	fs.IntVar(&cfg.maxScan, "max-scan", defaultMaxScan, "stop after holding this many skipped messages locked while reading to the selected ones; the rest are reported as not reached (0 is no limit)")
 	fs.StringVar(&cfg.snapshot, "snapshot", "", "write the snapshot to this path (default asbctl-snapshot-<entity>-<UTC time>.ndjson)")
 	fs.BoolVar(&cfg.dryRun, "dry-run", false, "print the plan and change nothing, even with --yes; writes no snapshot")
 	fs.BoolVar(&cfg.yes, "yes", false, "act, instead of printing the plan")
@@ -59,8 +64,11 @@ func finishSelectionConfig(cfg *selectionConfig, output string, now time.Time, h
 	if err := validateEntity(cfg.namespace, cfg.target, hasConnectionString); err != nil {
 		return err
 	}
-	if cfg.max < 0 {
+	switch {
+	case cfg.max < 0:
 		return fmt.Errorf("--max is %d, want 0 or more", cfg.max)
+	case cfg.maxScan < 0:
+		return fmt.Errorf("--max-scan is %d, want 0 or more", cfg.maxScan)
 	}
 	return nil
 }

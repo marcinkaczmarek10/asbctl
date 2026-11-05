@@ -11,7 +11,7 @@ func TestPurgeCompletesOnlyTheSelectedMessages(t *testing.T) {
 	selection := selectionOf(t, queue, Filter{PayloadTypeID: "Order"})
 	var results []Result
 
-	summary, err := Purge(context.Background(), queue, selection, "snap", func(result Result) error {
+	summary, err := Purge(context.Background(), queue, selection, "snap", PurgeOptions{Logger: discardLogger}, func(result Result) error {
 		results = append(results, result)
 		return nil
 	})
@@ -35,7 +35,7 @@ func TestPurgeReportsAFailedCompleteAndKeepsTheMessage(t *testing.T) {
 	queue.completeErr[1] = errBoom
 	var results []Result
 
-	summary, _ := Purge(context.Background(), queue, selectionOf(t, queue, Filter{}), "snap", func(result Result) error {
+	summary, _ := Purge(context.Background(), queue, selectionOf(t, queue, Filter{}), "snap", PurgeOptions{Logger: discardLogger}, func(result Result) error {
 		results = append(results, result)
 		return nil
 	})
@@ -56,7 +56,7 @@ func TestPurgeCountsSelectedMessagesThatNeverShowUp(t *testing.T) {
 	selection := selectionOf(t, queue, Filter{})
 	selection.Entries = append(selection.Entries, Entry{SequenceNumber: 9})
 
-	summary, _ := Purge(context.Background(), queue, selection, "snap", func(Result) error { return nil })
+	summary, _ := Purge(context.Background(), queue, selection, "snap", PurgeOptions{Logger: discardLogger}, func(Result) error { return nil })
 
 	if summary.Purged != 1 || summary.NotReached != 1 {
 		t.Errorf("summary = %+v, want 1 purged and 1 not reached", summary)
@@ -66,7 +66,7 @@ func TestPurgeCountsSelectedMessagesThatNeverShowUp(t *testing.T) {
 func TestPurgeStopsWhenTheResultCannotBeWritten(t *testing.T) {
 	queue := newFakeQueue(dlMessage(1, "a", "", "r"), dlMessage(2, "b", "", "r"))
 
-	_, err := Purge(context.Background(), queue, selectionOf(t, queue, Filter{}), "snap", func(Result) error { return errBoom })
+	_, err := Purge(context.Background(), queue, selectionOf(t, queue, Filter{}), "snap", PurgeOptions{Logger: discardLogger}, func(Result) error { return errBoom })
 
 	if err != errBoom || len(queue.completed) != 1 {
 		t.Errorf("Purge() error = %v, completed %v, want %v after one message", err, queue.completed, errBoom)

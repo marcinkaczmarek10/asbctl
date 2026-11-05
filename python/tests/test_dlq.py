@@ -122,6 +122,7 @@ def test_dlq_resend_yields_each_result_then_the_summary(
         bounced=1,
         stopped_on_bounce=True,
         not_reached=2,
+        scan_limit_reached=True,
         snapshot="snap.ndjson",
     )
     assert fake.arguments() == [
@@ -151,7 +152,12 @@ def test_dlq_purge_yields_each_result_then_the_summary(
     assert isinstance(second, DlqResult)
     assert [first.status, second.status] == ["purged", "failed"]
     assert events[2] == PurgeSummary(
-        schema=1, purged=1, failed=1, not_reached=0, snapshot="snap.ndjson"
+        schema=1,
+        purged=1,
+        failed=1,
+        not_reached=0,
+        scan_limit_reached=False,
+        snapshot="snap.ndjson",
     )
     assert fake.arguments() == [
         "dlq", "purge", "--namespace", "n", "--queue", "q", "--reason", "Poison",

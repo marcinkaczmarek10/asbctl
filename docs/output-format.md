@@ -114,10 +114,10 @@ For resend `status` is `resent`, `failed`, `sent_not_completed` or `skipped_dupl
 The run ends with one summary object, which has `"type":"summary"` so that it can be told from the result lines:
 
 ```json
-{"schema":1,"type":"summary","resent":3,"failed":0,"sent_not_completed":0,"skipped":1,"bounced":0,"stopped_on_bounce":false,"not_reached":0,"snapshot":"asbctl-snapshot-orders-20261105T143005Z.ndjson"}
+{"schema":1,"type":"summary","resent":3,"failed":0,"sent_not_completed":0,"skipped":1,"bounced":0,"stopped_on_bounce":false,"not_reached":0,"scan_limit_reached":false,"snapshot":"asbctl-snapshot-orders-20261105T143005Z.ndjson"}
 ```
 
-The purge summary has `purged`, `failed`, `not_reached` and `snapshot`. `not_reached` counts selected messages that the run never received. A non-zero exit also writes the error object on stderr, with code `partial`, `stopped_on_bounce`, `resend_failed` or `purge_failed`. A snapshot path that exists is the code `file_exists`.
+The purge summary has `purged`, `failed`, `not_reached`, `scan_limit_reached` and `snapshot`. `not_reached` counts selected messages that the run never received, and `scan_limit_reached` is `true` when the run stopped at `--max-scan` with selected messages left. A non-zero exit also writes the error object on stderr, with code `partial`, `stopped_on_bounce`, `resend_failed` or `purge_failed`. A snapshot path that exists is the code `file_exists`.
 
 ## Errors
 

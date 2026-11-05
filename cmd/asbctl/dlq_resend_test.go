@@ -31,7 +31,7 @@ func TestParseResendArgs(t *testing.T) {
 				if cfg.destination() != (dlq.Location{Queue: "orders"}) || cfg.ledgerTarget() != "queue:orders" {
 					t.Errorf("destination = %+v, ledger target %q, want the source queue", cfg.destination(), cfg.ledgerTarget())
 				}
-				if cfg.wave != 100 || cfg.stopOnBounce != 5 || cfg.rate != 0 || cfg.watch != 0 || cfg.max != 0 || cfg.newMessageID || cfg.acts() {
+				if cfg.maxScan != 50000 || cfg.wave != 100 || cfg.stopOnBounce != 5 || cfg.rate != 0 || cfg.watch != 0 || cfg.max != 0 || cfg.newMessageID || cfg.acts() {
 					t.Errorf("config = %+v, want the documented defaults and no action without --yes", cfg)
 				}
 				if !cfg.target.DeadLetter || cfg.snapshot != "asbctl-snapshot-orders-20261105T143005Z.ndjson" || cfg.format != export.FormatTable {
@@ -43,14 +43,14 @@ func TestParseResendArgs(t *testing.T) {
 			name: "every flag",
 			args: []string{
 				"--namespace", "n", "--topic", "t", "--subscription", "s", "--to-topic", "t2", "--payload-type-id", "P", "--reason", "R",
-				"--max", "50", "--rate", "20", "--wave", "10", "--watch", "2m", "--stop-on-bounce", "2.5", "--new-message-id",
+				"--max", "50", "--max-scan", "700", "--rate", "20", "--wave", "10", "--watch", "2m", "--stop-on-bounce", "2.5", "--new-message-id",
 				"--snapshot", "snap.ndjson", "--dry-run", "--yes", "--output", "json",
 			},
 			check: func(t *testing.T, cfg resendConfig) {
 				if cfg.destination() != (dlq.Location{Topic: "t2"}) || cfg.ledgerTarget() != "topic:t2" {
 					t.Errorf("destination = %+v, want topic t2", cfg.destination())
 				}
-				if cfg.filter != (dlq.Filter{PayloadTypeID: "P", Reason: "R"}) || cfg.max != 50 || cfg.rate != 20 || cfg.wave != 10 ||
+				if cfg.filter != (dlq.Filter{PayloadTypeID: "P", Reason: "R"}) || cfg.max != 50 || cfg.maxScan != 700 || cfg.rate != 20 || cfg.wave != 10 ||
 					cfg.watch != 2*time.Minute || cfg.stopOnBounce != 2.5 || !cfg.newMessageID || cfg.snapshot != "snap.ndjson" ||
 					!cfg.dryRun || !cfg.yes || cfg.format != export.FormatJSON {
 					t.Errorf("config = %+v, want every flag read", cfg)
@@ -96,6 +96,12 @@ func TestParseResendArgs(t *testing.T) {
 		{name: "stop on bounce above 100", args: []string{"--namespace", "n", "--queue", "q", "--stop-on-bounce", "101"}, wantErr: "--stop-on-bounce is 101"},
 		{name: "stop on bounce below 0", args: []string{"--namespace", "n", "--queue", "q", "--stop-on-bounce", "-1"}, wantErr: "--stop-on-bounce is -1"},
 		{name: "stop on bounce of 100 is allowed", args: []string{"--namespace", "n", "--queue", "q", "--stop-on-bounce", "100"}, check: func(*testing.T, resendConfig) {}},
+		{name: "max-scan cannot be negative", args: []string{"--namespace", "n", "--queue", "q", "--max-scan", "-1"}, wantErr: "--max-scan is -1"},
+		{name: "max-scan of zero is no limit", args: []string{"--namespace", "n", "--queue", "q", "--max-scan", "0"}, check: func(t *testing.T, cfg resendConfig) {
+			if cfg.maxScan != 0 {
+				t.Errorf("maxScan = %d, want 0", cfg.maxScan)
+			}
+		}},
 		{name: "max cannot be negative", args: []string{"--namespace", "n", "--queue", "q", "--max", "-1"}, wantErr: "--max is -1"},
 		{name: "unknown output", args: []string{"--namespace", "n", "--queue", "q", "--output", "yaml"}, wantErr: `unknown output format "yaml"`},
 		{name: "positional argument", args: []string{"--namespace", "n", "--queue", "q", "extra"}, wantErr: `unexpected argument "extra"`},
@@ -131,7 +137,7 @@ func TestParseResendArgsHelp(t *testing.T) {
 	}
 	for _, want := range []string{
 		"asbctl dlq resend --namespace", "reaches every matching subscription", "deduplicates on MessageId", "assumed on with a window of 10 minutes",
-		"-stop-on-bounce", "-to-topic", "-wave", "-watch", "-snapshot", "Bounce detection reads the source dead-letter queue only",
+		"-max-scan", "-stop-on-bounce", "-to-topic", "-wave", "-watch", "-snapshot", "Bounce detection reads the source dead-letter queue only",
 	} {
 		if !strings.Contains(help.String(), want) {
 			t.Errorf("help does not contain %q", want)

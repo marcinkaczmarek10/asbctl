@@ -49,6 +49,9 @@ looks in the source dead-letter queue for resent messages that came back, and st
 --stop-on-bounce percent of the resent messages did (0 turns this off). --watch keeps watching for that long after the
 last wave. Bounce detection reads the source dead-letter queue only.
 
+A run holds the messages it skips locked until it ends. --max-scan caps how many (default 50000), and a selection behind
+more messages than that is reported as not reached; run the command again for the rest.
+
 Exit code 0 means every selected message was resent and none came back. 3 means some were not, or some came back, or
 the run stopped on bounces. 1 means nothing was resent.
 
@@ -141,6 +144,7 @@ func resend(ctx context.Context, cfg resendConfig, connectionString string, stdo
 		Target:       cfg.ledgerTarget(),
 		Wave:         cfg.wave,
 		BatchSize:    min(cfg.wave, bus.ReceiveBatchSize(lockDuration, cfg.rate)),
+		MaxHeld:      cfg.maxScan,
 		StopOnBounce: cfg.stopOnBounce,
 		Watch:        cfg.watch,
 		Dedupe:       dedupe,
@@ -191,7 +195,7 @@ func sendSelection(
 
 	deps := dlq.ResendDeps{
 		Receiver: receiver, Sender: sender, Peeker: receiver, Ledger: ledger,
-		Pacer: bus.NewPacer(cfg.rate), Now: time.Now, Sleep: sleepContext,
+		Pacer: bus.NewPacer(cfg.rate), Now: time.Now, Sleep: sleepContext, Logger: logger,
 	}
 	summary, err := dlq.Resend(ctx, deps, params, func(result dlq.Result) error {
 		return dlq.WriteResult(stdout, cfg.format, result)

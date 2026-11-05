@@ -26,6 +26,9 @@ selected messages are written to a snapshot file, in the format of "asbctl expor
 them back. Without --yes, or with --dry-run, the command prints the plan (the count per payload type and reason and
 the snapshot path) and changes nothing.
 
+A run holds the messages it skips locked until it ends. --max-scan caps how many (default 50000), and a selection behind
+more messages than that is reported as not reached; run the command again for the rest.
+
 Exit code 0 means every selected message was purged, 3 means some were not, and 1 means none were.
 
 Authentication uses DefaultAzureCredential (AZURE_TOKEN_CREDENTIALS=dev narrows it to az and azd).
@@ -75,7 +78,7 @@ func purge(ctx context.Context, cfg selectionConfig, connectionString string, st
 	}
 	logger.InfoContext(ctx, "snapshot written", "file", cfg.snapshot, "messages", len(selection.Entries))
 
-	summary, err := dlq.Purge(ctx, receiver, selection, cfg.snapshot, func(result dlq.Result) error {
+	summary, err := dlq.Purge(ctx, receiver, selection, cfg.snapshot, dlq.PurgeOptions{MaxHeld: cfg.maxScan, Logger: logger}, func(result dlq.Result) error {
 		return dlq.WriteResult(stdout, cfg.format, result)
 	})
 	if err != nil {

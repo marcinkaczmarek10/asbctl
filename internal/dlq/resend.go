@@ -3,6 +3,7 @@ package dlq
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
@@ -27,6 +28,7 @@ type ResendDeps struct {
 	Pacer  *bus.Pacer
 	Now    func() time.Time
 	Sleep  func(ctx context.Context, d time.Duration) error
+	Logger *slog.Logger
 }
 
 // ResendParams configure a resend. Recent holds the MessageIds the ledger has for the target inside the
@@ -38,6 +40,7 @@ type ResendParams struct {
 	Target       string
 	Wave         int
 	BatchSize    int
+	MaxHeld      int
 	StopOnBounce float64
 	Watch        time.Duration
 	Dedupe       bus.DuplicateDetection
@@ -71,7 +74,7 @@ func Resend(ctx context.Context, deps ResendDeps, params ResendParams, onResult 
 	}
 
 	selected := params.Selection.Sequences()
-	handled, err := drain(ctx, deps.Receiver, params.BatchSize, selected, run.processBatch)
+	drained, err := drain(ctx, deps.Receiver, drainOptions{BatchSize: params.BatchSize, MaxHeld: params.MaxHeld, Logger: deps.Logger}, selected, run.processBatch)
 	if err == nil && run.waveSent > 0 && !run.summary.StoppedOnBounce {
 		err = run.endWave(ctx)
 	}
@@ -79,7 +82,8 @@ func Resend(ctx context.Context, deps ResendDeps, params ResendParams, onResult 
 		err = run.watch(ctx)
 	}
 
-	run.summary.NotReached = len(selected) - handled
+	run.summary.NotReached = len(selected) - drained.Handled
+	run.summary.ScanLimitReached = drained.ScanLimited
 	return run.summary, err
 }
 
