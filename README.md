@@ -24,7 +24,7 @@ Commands:
 Run "asbctl <command> -h" for the flags of a command.
 ```
 
-Output is a table by default and NDJSON with `--output json`. The record shape, error object and exit codes are in [docs/output-format.md](docs/output-format.md).
+Output is a table by default and NDJSON with `--output json`. The record shape, error object and exit codes are in [docs/output-format.md](docs/output-format.md). The rules for dead-letter commands are in [docs/dead-letter.md](docs/dead-letter.md).
 
 ## Licence
 
