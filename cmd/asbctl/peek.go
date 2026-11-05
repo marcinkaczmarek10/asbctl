@@ -89,7 +89,7 @@ func peek(ctx context.Context, cfg peekConfig, connectionString string, stdout i
 		_, err := writer.WriteMessages(page)
 		return err
 	})
-	logger.InfoContext(ctx, "peek finished", "peeked", peeked)
+	logger.DebugContext(ctx, "peek finished", "peeked", peeked)
 	return err
 }
 

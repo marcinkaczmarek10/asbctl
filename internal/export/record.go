@@ -3,6 +3,7 @@ package export
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math"
 	"time"
@@ -37,6 +38,7 @@ type record struct {
 	DeadLetterErrorDescription string         `json:"dead_letter_error_description,omitempty"`
 	DeadLetterSource           string         `json:"dead_letter_source,omitempty"`
 	ApplicationProperties      map[string]any `json:"application_properties,omitempty"`
+	BodyType                   string         `json:"body_type,omitempty"`
 	Body                       string         `json:"body"`
 	BodyText                   *string        `json:"body_text,omitempty"`
 
@@ -78,11 +80,65 @@ func recordFromReceived(message *azservicebus.ReceivedMessage) record {
 	if message.TimeToLive != nil {
 		rec.TimeToLiveSeconds = int64(message.TimeToLive.Seconds())
 	}
-	if utf8.Valid(message.Body) {
+	if bodyType, text, ok := nonDataBody(message); ok {
+		rec.BodyType = bodyType
+		rec.BodyText = &text
+	} else if utf8.Valid(message.Body) {
 		text := string(message.Body)
 		rec.BodyText = &text
 	}
 	return rec
+}
+
+// nonDataBody finds a body that is an AMQP value or sequence section. ReceivedMessage.Body holds only a
+// data section, so such a message arrives with Body nil and would otherwise print as empty.
+func nonDataBody(message *azservicebus.ReceivedMessage) (bodyType, text string, ok bool) {
+	raw := message.RawAMQPMessage
+	if raw == nil || message.Body != nil {
+		return "", "", false
+	}
+
+	switch {
+	case raw.Body.Value != nil:
+		return "value", jsonText(raw.Body.Value), true
+	case len(raw.Body.Sequence) > 0:
+		sections := make([]any, len(raw.Body.Sequence))
+		for i, section := range raw.Body.Sequence {
+			sections[i] = section
+		}
+		return "sequence", jsonText(sections), true
+	default:
+		return "", "", false
+	}
+}
+
+func jsonText(value any) string {
+	encoded, err := json.Marshal(jsonValueFromAMQP(value))
+	if err != nil {
+		return fmt.Sprint(value)
+	}
+	return string(encoded)
+}
+
+// jsonValueFromAMQP makes a decoded AMQP body encodable as JSON: lists and maps are walked, and scalars
+// follow the same typing rules as application properties.
+func jsonValueFromAMQP(value any) any {
+	switch v := value.(type) {
+	case []any:
+		items := make([]any, len(v))
+		for i, item := range v {
+			items[i] = jsonValueFromAMQP(item)
+		}
+		return items
+	case map[any]any:
+		entries := make(map[string]any, len(v))
+		for key, item := range v {
+			entries[fmt.Sprint(key)] = jsonValueFromAMQP(item)
+		}
+		return entries
+	default:
+		return propertyFromAMQP(value)
+	}
 }
 
 // payloadTypeID returns the PayloadTypeId property, or an empty string when it is absent or not a string.

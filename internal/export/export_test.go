@@ -41,6 +41,83 @@ func TestRecordFromReceivedBody(t *testing.T) {
 	}
 }
 
+func TestRecordFromReceivedNonDataBody(t *testing.T) {
+	tests := []struct {
+		name         string
+		message      *azservicebus.ReceivedMessage
+		wantBodyType string
+		wantBodyText *string
+	}{
+		{
+			name:         "string value section",
+			message:      &azservicebus.ReceivedMessage{RawAMQPMessage: &azservicebus.AMQPAnnotatedMessage{Body: azservicebus.AMQPAnnotatedMessageBody{Value: "hello"}}},
+			wantBodyType: "value", wantBodyText: ptr(`"hello"`),
+		},
+		{
+			name: "map value section with typed members",
+			message: &azservicebus.ReceivedMessage{RawAMQPMessage: &azservicebus.AMQPAnnotatedMessage{Body: azservicebus.AMQPAnnotatedMessageBody{
+				Value: map[any]any{"id": int64(7), "raw": []byte{0xff}, "list": []any{"a", true}},
+			}}},
+			wantBodyType: "value", wantBodyText: ptr(`{"id":7,"list":["a",true],"raw":{"type":"binary","value":"/w=="}}`),
+		},
+		{
+			name: "sequence sections",
+			message: &azservicebus.ReceivedMessage{RawAMQPMessage: &azservicebus.AMQPAnnotatedMessage{Body: azservicebus.AMQPAnnotatedMessageBody{
+				Sequence: [][]any{{"a", int64(1)}, {false}},
+			}}},
+			wantBodyType: "sequence", wantBodyText: ptr(`[["a",1],[false]]`),
+		},
+		{
+			name: "data section stays a data body",
+			message: &azservicebus.ReceivedMessage{Body: []byte("x"), RawAMQPMessage: &azservicebus.AMQPAnnotatedMessage{Body: azservicebus.AMQPAnnotatedMessageBody{
+				Data: [][]byte{[]byte("x")},
+			}}},
+			wantBodyType: "", wantBodyText: ptr("x"),
+		},
+		{
+			name:         "raw message with an empty body is an empty data body",
+			message:      &azservicebus.ReceivedMessage{RawAMQPMessage: &azservicebus.AMQPAnnotatedMessage{}},
+			wantBodyType: "", wantBodyText: ptr(""),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := recordFromReceived(tc.message)
+
+			if got.BodyType != tc.wantBodyType {
+				t.Errorf("BodyType = %q, want %q", got.BodyType, tc.wantBodyType)
+			}
+			if !reflect.DeepEqual(got.BodyText, tc.wantBodyText) {
+				t.Errorf("BodyText = %s, want %s", derefOrNil(got.BodyText), derefOrNil(tc.wantBodyText))
+			}
+			if got.Body != "" && tc.wantBodyType != "" {
+				t.Errorf("Body = %q, want empty for a %s body", got.Body, tc.wantBodyType)
+			}
+		})
+	}
+}
+
+func derefOrNil(s *string) string {
+	if s == nil {
+		return "<nil>"
+	}
+	return *s
+}
+
+func TestRecordJSONCarriesBodyTypeForAValueBody(t *testing.T) {
+	message := &azservicebus.ReceivedMessage{RawAMQPMessage: &azservicebus.AMQPAnnotatedMessage{Body: azservicebus.AMQPAnnotatedMessageBody{Value: int64(5)}}}
+
+	got, err := json.Marshal(recordFromReceived(message))
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	want := `{"schema":1,"body_type":"value","body":"","body_text":"5"}`
+	if string(got) != want {
+		t.Errorf("json = %s, want %s", got, want)
+	}
+}
+
 func TestRecordFromReceivedProperties(t *testing.T) {
 	enqueued := time.Date(2026, 11, 5, 14, 30, 0, 500, time.FixedZone("CET", 3600))
 	uuid := amqp.UUID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}

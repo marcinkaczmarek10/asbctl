@@ -31,12 +31,13 @@ Keys are snake_case and empty values are omitted, except `body`, which is always
 | `dead_letter_error_description` | string | |
 | `dead_letter_source` | string | |
 | `application_properties` | object | see below |
-| `body` | string | base64 of the raw bytes |
-| `body_text` | string | only when the body is valid UTF-8 |
+| `body_type` | string | `value` or `sequence`; absent means a data body |
+| `body` | string | base64 of the raw bytes, empty for a `value` or `sequence` body |
+| `body_text` | string | the body as UTF-8 text, only when it is valid UTF-8; for a `value` or `sequence` body, the JSON encoding of the section |
 
 ## Application properties
 
-A JSON string, number or bool is written as is. Any other AMQP type is written as `{"type": "<timestamp|binary|uuid|...>", "value": "<string>"}`, so that import can restore it losslessly.
+A JSON string, number or bool is written as is. Any other AMQP type is written as `{"type": "<timestamp|binary|uuid|...>", "value": "<string>"}`, so that import can restore it losslessly. Integers and finite floats are written as plain JSON numbers, so their exact AMQP width (int32 or int64, float or double) is not kept. Import writes integers as int64 and floats as double.
 
 `PayloadTypeId` is the application property that Ev.ServiceBus, a public MIT library, uses to route a message to its handler. `asbctl` shows it, filters on it with `--payload-type-id`, and never drops it on resend.
 
