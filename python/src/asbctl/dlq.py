@@ -1,10 +1,11 @@
 """Typed helpers for dlq resend and dlq purge, as described in docs/dead-letter.md."""
 
-from collections.abc import Iterator, Mapping
+import contextlib
+from collections.abc import AsyncGenerator, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from asbctl.core import run
+from asbctl.core import run, run_once
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,11 +146,10 @@ def purge_event_from_record(record: Mapping[str, Any]) -> DlqResult | PurgeSumma
 
 
 def _duration_flag(value: float | str | None) -> str | None:
-    """Turn seconds into the Go duration that --watch reads. A string is passed on as it is."""
     return f"{value}s" if isinstance(value, int | float) else value
 
 
-def dlq_resend_plan(
+async def dlq_resend_plan(
     *,
     namespace: str | None = None,
     queue: str | None = None,
@@ -160,16 +160,16 @@ def dlq_resend_plan(
     payload_type_id: str | None = None,
     reason: str | None = None,
     max_messages: int | None = None,
-    new_message_id: bool = False,
-    snapshot: str | None = None,
-    dry_run: bool = False,
-    timeout: float | None = None,
+    is_message_id_replaced: bool = False,
+    snapshot_path: str | None = None,
+    is_dry_run: bool = False,
+    timeout_seconds: float | None = None,
 ) -> DlqPlan:
     """Return what dlq resend would do. Nothing is changed, and no snapshot is written."""
-    records = run(
+    record = await run_once(
         "dlq",
         "resend",
-        timeout=timeout,
+        timeout_seconds=timeout_seconds,
         namespace=namespace,
         queue=queue,
         topic=topic,
@@ -179,14 +179,14 @@ def dlq_resend_plan(
         payload_type_id=payload_type_id,
         reason=reason,
         max=max_messages,
-        new_message_id=new_message_id,
-        snapshot=snapshot,
-        dry_run=dry_run,
+        new_message_id=is_message_id_replaced,
+        snapshot=snapshot_path,
+        dry_run=is_dry_run,
     )
-    return plan_from_record(next(records))
+    return plan_from_record(record)
 
 
-def dlq_resend(
+async def dlq_resend(
     *,
     namespace: str | None = None,
     queue: str | None = None,
@@ -197,45 +197,56 @@ def dlq_resend(
     payload_type_id: str | None = None,
     reason: str | None = None,
     max_messages: int | None = None,
-    rate: int | None = None,
-    wave: int | None = None,
-    watch: float | str | None = None,
-    stop_on_bounce: float | None = None,
-    new_message_id: bool = False,
-    snapshot: str | None = None,
-    timeout: float | None = None,
-) -> Iterator[DlqResult | ResendSummary]:
+    max_scan_messages: int | None = None,
+    rate_per_second: int | None = None,
+    wave_size: int | None = None,
+    watch_seconds: float | str | None = None,
+    stop_on_bounce_percent: float | None = None,
+    is_message_id_replaced: bool = False,
+    snapshot_path: str | None = None,
+    timeout_seconds: float | None = None,
+) -> AsyncGenerator[DlqResult | ResendSummary]:
     """Resend dead-lettered messages and yield the result of each, then the summary.
 
-    A snapshot is written first. AsbctlError is raised after the summary when not every selected
-    message was resent, with exit code 3 if some were and 1 if none were. Call dlq_resend_plan first
-    to see the plan.
+    A snapshot is written first. Call dlq_resend_plan first to see the plan.
+
+    Args:
+        watch_seconds: How long to look for bounces after the last wave. A string is passed on
+            as a Go duration, such as 2m.
+
+    Raises:
+        AsbctlError: Not every selected message was resent. It is raised after the summary, with
+            exit code 3 if some messages were resent and 1 if none were.
     """
-    records = run(
-        "dlq",
-        "resend",
-        timeout=timeout,
-        namespace=namespace,
-        queue=queue,
-        topic=topic,
-        subscription=subscription,
-        to_queue=to_queue,
-        to_topic=to_topic,
-        payload_type_id=payload_type_id,
-        reason=reason,
-        max=max_messages,
-        rate=rate,
-        wave=wave,
-        watch=_duration_flag(watch),
-        stop_on_bounce=stop_on_bounce,
-        new_message_id=new_message_id,
-        snapshot=snapshot,
-        yes=True,
-    )
-    return (resend_event_from_record(record) for record in records)
+    async with contextlib.aclosing(
+        run(
+            "dlq",
+            "resend",
+            timeout_seconds=timeout_seconds,
+            namespace=namespace,
+            queue=queue,
+            topic=topic,
+            subscription=subscription,
+            to_queue=to_queue,
+            to_topic=to_topic,
+            payload_type_id=payload_type_id,
+            reason=reason,
+            max=max_messages,
+            max_scan=max_scan_messages,
+            rate=rate_per_second,
+            wave=wave_size,
+            watch=_duration_flag(watch_seconds),
+            stop_on_bounce=stop_on_bounce_percent,
+            new_message_id=is_message_id_replaced,
+            snapshot=snapshot_path,
+            yes=True,
+        )
+    ) as records:
+        async for record in records:
+            yield resend_event_from_record(record)
 
 
-def dlq_purge_plan(
+async def dlq_purge_plan(
     *,
     namespace: str | None = None,
     queue: str | None = None,
@@ -244,15 +255,15 @@ def dlq_purge_plan(
     payload_type_id: str | None = None,
     reason: str | None = None,
     max_messages: int | None = None,
-    snapshot: str | None = None,
-    dry_run: bool = False,
-    timeout: float | None = None,
+    snapshot_path: str | None = None,
+    is_dry_run: bool = False,
+    timeout_seconds: float | None = None,
 ) -> DlqPlan:
     """Return what dlq purge would do. Nothing is changed, and no snapshot is written."""
-    records = run(
+    record = await run_once(
         "dlq",
         "purge",
-        timeout=timeout,
+        timeout_seconds=timeout_seconds,
         namespace=namespace,
         queue=queue,
         topic=topic,
@@ -260,13 +271,13 @@ def dlq_purge_plan(
         payload_type_id=payload_type_id,
         reason=reason,
         max=max_messages,
-        snapshot=snapshot,
-        dry_run=dry_run,
+        snapshot=snapshot_path,
+        dry_run=is_dry_run,
     )
-    return plan_from_record(next(records))
+    return plan_from_record(record)
 
 
-def dlq_purge(
+async def dlq_purge(
     *,
     namespace: str | None = None,
     queue: str | None = None,
@@ -275,26 +286,33 @@ def dlq_purge(
     payload_type_id: str | None = None,
     reason: str | None = None,
     max_messages: int | None = None,
-    snapshot: str | None = None,
-    timeout: float | None = None,
-) -> Iterator[DlqResult | PurgeSummary]:
+    max_scan_messages: int | None = None,
+    snapshot_path: str | None = None,
+    timeout_seconds: float | None = None,
+) -> AsyncGenerator[DlqResult | PurgeSummary]:
     """Remove dead-lettered messages and yield the result of each, then the summary.
 
-    A snapshot is written first. AsbctlError is raised after the summary when not every selected
-    message was purged. Call dlq_purge_plan first to see the plan.
+    A snapshot is written first. Call dlq_purge_plan first to see the plan.
+
+    Raises:
+        AsbctlError: Not every selected message was purged. It is raised after the summary.
     """
-    records = run(
-        "dlq",
-        "purge",
-        timeout=timeout,
-        namespace=namespace,
-        queue=queue,
-        topic=topic,
-        subscription=subscription,
-        payload_type_id=payload_type_id,
-        reason=reason,
-        max=max_messages,
-        snapshot=snapshot,
-        yes=True,
-    )
-    return (purge_event_from_record(record) for record in records)
+    async with contextlib.aclosing(
+        run(
+            "dlq",
+            "purge",
+            timeout_seconds=timeout_seconds,
+            namespace=namespace,
+            queue=queue,
+            topic=topic,
+            subscription=subscription,
+            payload_type_id=payload_type_id,
+            reason=reason,
+            max=max_messages,
+            max_scan=max_scan_messages,
+            snapshot=snapshot_path,
+            yes=True,
+        )
+    ) as records:
+        async for record in records:
+            yield purge_event_from_record(record)

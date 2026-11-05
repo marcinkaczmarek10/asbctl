@@ -31,19 +31,26 @@ Output is a table by default and NDJSON with `--output json`. The record shape, 
 
 ## Python
 
-`python/` holds a zero-dependency adapter that runs `asbctl --output json` and returns typed results. It needs Python 3.13 or later, and finds the binary through `ASBCTL_BIN` or `PATH`.
+`python/` holds a zero-dependency async adapter that runs `asbctl --output json` and returns typed results. It needs Python 3.13 or later, and finds the binary through `ASBCTL_BIN` or `PATH`.
 
 ```python
-from asbctl import AsbctlError, dlq_summary, peek
+import asyncio
 
-summary = dlq_summary(namespace="contoso", queue="orders")
-for group in summary.groups:
-    print(group.count, group.payload_type_id or "(none)", group.dead_letter_reason)
-for message in peek(namespace="contoso", queue="orders", dlq=True, payload_type_id="OrderPlaced", max_messages=10):
-    print(message.message_id, message.body_text)
+from asbctl import dlq_summary, peek
+
+
+async def main() -> None:
+    summary = await dlq_summary(namespace="contoso", queue="orders")
+    for group in summary.groups:
+        print(group.count, group.payload_type_id or "(none)", group.dead_letter_reason)
+    async for message in peek(namespace="contoso", queue="orders", is_dead_letter=True, max_messages=10):
+        print(message.message_id, message.body_text)
+
+
+asyncio.run(main())
 ```
 
-The helpers are `peek`, `export`, `export_to_file`, `dlq_summary`, `send_plan`, `send`, `dlq_resend_plan`, `dlq_resend`, `dlq_purge_plan` and `dlq_purge`. `send` takes `Message` objects or dicts in the export format and yields one `SendResult` per message. Failures raise `AsbctlError` with the `code`, `message` and `exit_code` that `asbctl` reported.
+The helpers are `peek`, `export`, `export_to_file`, `dlq_summary`, `send_plan`, `send`, `dlq_resend_plan`, `dlq_resend`, `dlq_purge_plan` and `dlq_purge`. Helpers that return many results are async iterators, and the others are awaited. `send` takes `Message` objects or dicts in the export format and yields one `SendResult` per message. Failures raise `AsbctlError` with the `code`, `message` and `exit_code` that `asbctl` reported, and a missing binary raises `BinaryNotFoundError`.
 
 ## Development
 

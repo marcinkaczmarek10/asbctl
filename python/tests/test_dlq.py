@@ -2,10 +2,12 @@ from collections.abc import Callable
 
 import pytest
 
-from asbctl import (
-    AsbctlError,
+from asbctl.dlq import (
+    Dedupe,
+    DlqGroup,
     DlqPlan,
     DlqResult,
+    Location,
     PurgeSummary,
     ResendSummary,
     dlq_purge,
@@ -13,26 +15,29 @@ from asbctl import (
     dlq_resend,
     dlq_resend_plan,
 )
-from asbctl.dlq import Dedupe, DlqGroup, Location
+from asbctl.exceptions import AsbctlError
 
 from .conftest import FakeFactory
 
 
-def test_dlq_resend_plan_parses_the_contract_plan_and_passes_no_yes(
-    fake_asbctl: FakeFactory, contract: Callable[[str], str]
+async def test_dlq_resend_plan_parses_the_contract_plan_and_passes_no_yes(
+    fake_asbctl: FakeFactory, read_contract: Callable[[str], str]
 ):
-    fake = fake_asbctl(stdout=contract("dlq_resend_plan.json"))
+    # Given
+    fake = fake_asbctl(stdout=read_contract("dlq_resend_plan.json"))
 
-    plan = dlq_resend_plan(
-        namespace="n",
-        queue="orders",
-        payload_type_id="OrderPlaced",
-        reason="Poison",
-        max_messages=10,
-        new_message_id=True,
-        dry_run=True,
+    # When
+    plan = await dlq_resend_plan(
+        namespace="n-test",
+        queue="orders-q",
+        payload_type_id="InvoiceSent",
+        reason="Expired",
+        max_messages=11,
+        is_message_id_replaced=True,
+        is_dry_run=True,
     )
 
+    # Then
     assert plan == DlqPlan(
         schema=1,
         command="dlq resend",
@@ -51,21 +56,25 @@ def test_dlq_resend_plan_parses_the_contract_plan_and_passes_no_yes(
         warnings=(),
         dry_run=False,
     )
-    assert fake.arguments() == [
-        "dlq", "resend", "--namespace", "n", "--queue", "orders",
-        "--payload-type-id", "OrderPlaced", "--reason", "Poison", "--max", "10",
+    assert fake.read_arguments() == [
+        "dlq", "resend", "--namespace", "n-test", "--queue", "orders-q",
+        "--payload-type-id", "InvoiceSent", "--reason", "Expired", "--max", "11",
         "--new-message-id", "--dry-run", "--output", "json",
     ]  # fmt: skip
-    assert "--yes" not in fake.arguments()
 
 
-def test_dlq_purge_plan_parses_a_plan_without_target_or_dedupe(
-    fake_asbctl: FakeFactory, contract: Callable[[str], str]
+async def test_dlq_purge_plan_parses_a_plan_without_target_or_dedupe(
+    fake_asbctl: FakeFactory, read_contract: Callable[[str], str]
 ):
-    fake_asbctl(stdout=contract("dlq_purge_plan.json"))
+    # Given
+    fake_asbctl(stdout=read_contract("dlq_purge_plan.json"))
 
-    plan = dlq_purge_plan(namespace="n", topic="events", subscription="billing", dry_run=True)
+    # When
+    plan = await dlq_purge_plan(
+        namespace="n-test", topic="events-t", subscription="billing-s", is_dry_run=True
+    )
 
+    # Then
     assert plan.command == "dlq purge"
     assert plan.source == Location(topic="events", subscription="billing")
     assert plan.target is None
@@ -74,25 +83,30 @@ def test_dlq_purge_plan_parses_a_plan_without_target_or_dedupe(
     assert plan.selected == 4
 
 
-def test_dlq_resend_yields_each_result_then_the_summary(
-    fake_asbctl: FakeFactory, contract: Callable[[str], str]
+async def test_dlq_resend_yields_each_result_then_the_summary(
+    fake_asbctl: FakeFactory, read_contract: Callable[[str], str]
 ):
-    fake = fake_asbctl(stdout=contract("dlq_resend_result.ndjson"))
+    # Given
+    fake = fake_asbctl(stdout=read_contract("dlq_resend_result.ndjson"))
 
-    events = list(
-        dlq_resend(
-            namespace="n",
-            topic="t",
-            subscription="s",
-            to_topic="t2",
-            rate=20,
-            wave=10,
-            watch=120,
-            stop_on_bounce=2.5,
-            snapshot="snap.ndjson",
+    # When
+    events = [
+        event
+        async for event in dlq_resend(
+            namespace="n-test",
+            topic="t-test",
+            subscription="s-test",
+            to_topic="t2-test",
+            max_scan_messages=700,
+            rate_per_second=13,
+            wave_size=17,
+            watch_seconds=120,
+            stop_on_bounce_percent=2.5,
+            snapshot_path="snap-test.ndjson",
         )
-    )
+    ]
 
+    # Then
     assert events[:4] == [
         DlqResult(schema=1, sequence_number=1042, status="resent", message_id="msg-1"),
         DlqResult(
@@ -125,33 +139,76 @@ def test_dlq_resend_yields_each_result_then_the_summary(
         scan_limit_reached=True,
         snapshot="snap.ndjson",
     )
-    assert fake.arguments() == [
-        "dlq", "resend", "--namespace", "n", "--topic", "t", "--subscription", "s",
-        "--to-topic", "t2", "--rate", "20", "--wave", "10", "--watch", "120s",
-        "--stop-on-bounce", "2.5", "--snapshot", "snap.ndjson", "--yes", "--output", "json",
+    assert fake.read_arguments() == [
+        "dlq", "resend", "--namespace", "n-test", "--topic", "t-test", "--subscription", "s-test",
+        "--to-topic", "t2-test", "--max-scan", "700", "--rate", "13", "--wave", "17",
+        "--watch", "120s", "--stop-on-bounce", "2.5", "--snapshot", "snap-test.ndjson",
+        "--yes", "--output", "json",
     ]  # fmt: skip
 
 
-def test_a_watch_given_as_a_go_duration_is_passed_on_as_it_is(fake_asbctl: FakeFactory):
+async def test_dlq_resend_passes_a_watch_given_as_a_go_duration_on_as_it_is(
+    fake_asbctl: FakeFactory,
+):
+    # Given
     fake = fake_asbctl()
 
-    list(dlq_resend(namespace="n", queue="q", watch="2m"))
+    # When
+    [event async for event in dlq_resend(namespace="n-test", queue="q-test", watch_seconds="3m")]
 
-    assert fake.arguments()[fake.arguments().index("--watch") + 1] == "2m"
+    # Then
+    arguments = fake.read_arguments()
+    assert arguments[arguments.index("--watch") + 1] == "3m"
 
 
-def test_dlq_purge_yields_each_result_then_the_summary(
-    fake_asbctl: FakeFactory, contract: Callable[[str], str]
+async def test_dlq_resend_raises_after_the_summary_when_it_stopped_on_bounces(
+    fake_asbctl: FakeFactory, read_contract: Callable[[str], str]
 ):
-    fake = fake_asbctl(stdout=contract("dlq_purge_result.ndjson"))
+    # Given
+    fake_asbctl(
+        stdout=read_contract("dlq_resend_result.ndjson"),
+        stderr=(
+            '{"schema":1,"error":{"code":"stopped_on_bounce","message":'
+            '"stopped before the next wave: 3 of 40 resent messages came back"}}\n'
+        ),
+        exit_code=3,
+    )
+    events = dlq_resend(namespace="n-test", queue="q-test")
 
-    events = list(dlq_purge(namespace="n", queue="q", reason="Poison", max_messages=5))
+    # When
+    received = [await anext(events) for _ in range(5)]
+    with pytest.raises(AsbctlError) as raised:
+        await anext(events)
 
-    first, second = events[:2]
+    # Then
+    assert len(received) == 5
+    assert (raised.value.code, raised.value.exit_code) == ("stopped_on_bounce", 3)
+
+
+async def test_dlq_purge_yields_each_result_then_the_summary(
+    fake_asbctl: FakeFactory, read_contract: Callable[[str], str]
+):
+    # Given
+    fake = fake_asbctl(stdout=read_contract("dlq_purge_result.ndjson"))
+
+    # When
+    events = [
+        event
+        async for event in dlq_purge(
+            namespace="n-test",
+            queue="q-test",
+            reason="Expired",
+            max_messages=9,
+            max_scan_messages=800,
+        )
+    ]
+
+    # Then
+    first, second, summary = events
     assert isinstance(first, DlqResult)
     assert isinstance(second, DlqResult)
     assert [first.status, second.status] == ["purged", "failed"]
-    assert events[2] == PurgeSummary(
+    assert summary == PurgeSummary(
         schema=1,
         purged=1,
         failed=1,
@@ -159,32 +216,16 @@ def test_dlq_purge_yields_each_result_then_the_summary(
         scan_limit_reached=False,
         snapshot="snap.ndjson",
     )
-    assert fake.arguments() == [
-        "dlq", "purge", "--namespace", "n", "--queue", "q", "--reason", "Poison",
-        "--max", "5", "--yes", "--output", "json",
+    assert fake.read_arguments() == [
+        "dlq", "purge", "--namespace", "n-test", "--queue", "q-test", "--reason", "Expired",
+        "--max", "9", "--max-scan", "800", "--yes", "--output", "json",
     ]  # fmt: skip
 
 
-def test_dlq_resend_raises_after_the_summary_when_it_stopped_on_bounces(
-    fake_asbctl: FakeFactory, contract: Callable[[str], str]
+async def test_dlq_resend_plan_raises_a_usage_error_for_a_subscription_without_a_target(
+    fake_asbctl: FakeFactory,
 ):
-    fake_asbctl(
-        stdout=contract("dlq_resend_result.ndjson"),
-        stderr=(
-            '{"schema":1,"error":{"code":"stopped_on_bounce","message":'
-            '"stopped before the next wave: 3 of 40 resent messages came back"}}\n'
-        ),
-        exit_code=3,
-    )
-    events = dlq_resend(namespace="n", queue="q")
-
-    assert len([next(events) for _ in range(5)]) == 5
-    with pytest.raises(AsbctlError) as raised:
-        next(events)
-    assert (raised.value.code, raised.value.exit_code) == ("stopped_on_bounce", 3)
-
-
-def test_a_subscription_without_a_target_is_a_usage_error(fake_asbctl: FakeFactory):
+    # Given
     fake_asbctl(
         stderr=(
             '{"schema":1,"error":{"code":"usage","message":'
@@ -193,8 +234,10 @@ def test_a_subscription_without_a_target_is_a_usage_error(fake_asbctl: FakeFacto
         exit_code=2,
     )
 
+    # When
     with pytest.raises(AsbctlError) as raised:
-        dlq_resend_plan(namespace="n", topic="t", subscription="s")
+        await dlq_resend_plan(namespace="n-test", topic="t-test", subscription="s-test")
 
+    # Then
     assert raised.value.exit_code == 2
     assert "no default target" in raised.value.message

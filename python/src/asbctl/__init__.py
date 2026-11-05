@@ -1,7 +1,7 @@
 """Python adapter for the asbctl command-line tool."""
 
 from asbctl.commands import dlq_summary, export, export_to_file, peek, send, send_plan
-from asbctl.core import AsbctlError, run
+from asbctl.core import run, run_once
 from asbctl.dlq import (
     DlqPlan,
     DlqResult,
@@ -12,6 +12,7 @@ from asbctl.dlq import (
     dlq_resend,
     dlq_resend_plan,
 )
+from asbctl.exceptions import AsbctlError, BinaryNotFoundError
 from asbctl.models import (
     Entity,
     ExportResult,
@@ -26,6 +27,7 @@ from asbctl.models import (
 
 __all__ = [
     "AsbctlError",
+    "BinaryNotFoundError",
     "DlqPlan",
     "DlqResult",
     "Entity",
@@ -48,6 +50,7 @@ __all__ = [
     "export_to_file",
     "peek",
     "run",
+    "run_once",
     "send",
     "send_plan",
 ]

@@ -1,48 +1,49 @@
 """Run the asbctl binary and stream the JSON it prints."""
 
+import asyncio
 import contextlib
 import json
 import os
 import shutil
-import subprocess
-import tempfile
-import threading
-from collections.abc import Generator, Iterable
-from typing import Any
+from collections.abc import AsyncGenerator, AsyncIterable, Iterable, Mapping
+from typing import Any, cast
 
-BINARY_ENV = "ASBCTL_BIN"
+from asbctl.exceptions import AsbctlError, BinaryNotFoundError
+
+BINARY_ENV_NAME = "ASBCTL_BIN"
 
 type FlagValue = str | int | float | bool | None
 
 
-class AsbctlError(Exception):
-    """A failed asbctl run: the code and message asbctl reported, and its exit code."""
+def get_binary_path(environment: Mapping[str, str]) -> str:
+    """Return the binary that ASBCTL_BIN names, or the asbctl found on PATH.
 
-    def __init__(self, code: str, message: str, exit_code: int) -> None:
-        super().__init__(f"{code}: {message} (exit {exit_code})")
-        self.code = code
-        self.message = message
-        self.exit_code = exit_code
+    Args:
+        environment: The environment variables to read ASBCTL_BIN and PATH from.
 
+    Raises:
+        BinaryNotFoundError: ASBCTL_BIN is unset and asbctl is not on PATH.
+    """
+    configured_path = environment.get(BINARY_ENV_NAME)
+    if configured_path:
+        return configured_path
 
-def find_binary() -> str:
-    """Return ASBCTL_BIN when it is set, and the asbctl found on PATH otherwise."""
-    configured = os.environ.get(BINARY_ENV)
-    if configured:
-        return configured
-
-    found = shutil.which("asbctl")
-    if found is None:
-        raise FileNotFoundError(f"asbctl not found: set {BINARY_ENV} or put asbctl on PATH")
-    return found
+    found_path = shutil.which("asbctl", path=environment.get("PATH"))
+    if found_path is None:
+        raise BinaryNotFoundError(f"set {BINARY_ENV_NAME} or put asbctl on PATH")
+    return found_path
 
 
 def build_arguments(
-    command: str, subcommands: tuple[str, ...], flags: dict[str, FlagValue]
+    command: str, subcommands: tuple[str, ...], flags: Mapping[str, FlagValue]
 ) -> list[str]:
     """Build the argument list: the command, the flags, then --output json.
 
     A value of True gives a bare flag, and False or None leave the flag out.
+
+    Raises:
+        ValueError: The flags include output, which is always json.
+        TypeError: A flag value is not a string, a number, a boolean or None.
     """
     if "output" in flags:
         raise ValueError("output is always json, do not pass it")
@@ -61,95 +62,161 @@ def build_arguments(
     return [*arguments, "--output", "json"]
 
 
-def error_from_stderr(stderr: str, exit_code: int) -> AsbctlError:
+def error_from_stderr(stderr_text: str, exit_code: int) -> AsbctlError:
     """Read the JSON error object that asbctl writes in json mode, or keep the raw text."""
-    for line in reversed(stderr.splitlines()):
+    for line in reversed(stderr_text.splitlines()):
         try:
             detail = json.loads(line)["error"]
             return AsbctlError(str(detail["code"]), str(detail["message"]), exit_code)
         except (ValueError, KeyError, TypeError):
             continue
-    return AsbctlError("unknown", stderr.strip(), exit_code)
+    return AsbctlError("unknown", stderr_text.strip(), exit_code)
 
 
-def run(
-    command: str,
-    *subcommands: str,
-    timeout: float | None = None,
-    stdin_lines: Iterable[str] | None = None,
-    **flags: FlagValue,
-) -> Generator[dict[str, Any]]:
-    """Run an asbctl command and yield each JSON object it prints, as it prints it.
-
-    Keyword arguments become flags: payload_type_id="X" is --payload-type-id X. Each string in
-    stdin_lines is written to the command's stdin as one line. Raises AsbctlError when asbctl exits
-    non-zero, and subprocess.TimeoutExpired when timeout seconds pass first.
-    """
-    arguments = [find_binary(), *build_arguments(command, subcommands, flags)]
-
-    # stderr goes to a file so that a chatty log cannot fill a pipe and stall the stdout reads.
-    with tempfile.TemporaryFile("w+") as stderr_file:
-        # The executable is the caller's choice (ASBCTL_BIN or PATH) and the arguments are a list.
-        process = subprocess.Popen(  # noqa: S603
-            arguments,
-            stdin=subprocess.DEVNULL if stdin_lines is None else subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=stderr_file,
-            text=True,
-        )
-        timed_out = threading.Event()
-
-        def kill_on_timeout() -> None:
-            timed_out.set()
-            process.kill()
-
-        timer = None if timeout is None else threading.Timer(timeout, kill_on_timeout)
-        if timer:
-            timer.start()
-        if stdin_lines is not None:
-            threading.Thread(target=_feed, args=(process, stdin_lines), daemon=True).start()
-        try:
-            assert process.stdout is not None  # noqa: S101
-            for line in process.stdout:
-                if line.strip():
-                    yield _object_from_line(line)
-            exit_code = process.wait()
-        finally:
-            if timer:
-                timer.cancel()
-            if process.poll() is None:
-                process.kill()
-            process.wait()
-            if process.stdout:
-                process.stdout.close()
-
-        if timed_out.is_set():
-            raise subprocess.TimeoutExpired(arguments, timeout or 0.0)
-        if exit_code != 0:
-            stderr_file.seek(0)
-            raise error_from_stderr(stderr_file.read(), exit_code)
-
-
-def _feed(process: subprocess.Popen[str], lines: Iterable[str]) -> None:
-    """Write the lines to the process, then close its stdin so that it sees the end of the input.
-
-    A write error is ignored on purpose: it means the process exited early, and its exit code
-    and stderr are what run() reports.
-    """
-    stdin = process.stdin
-    assert stdin is not None  # noqa: S101
-    try:
-        for line in lines:
-            stdin.write(line + "\n")
-    except (OSError, ValueError):
-        pass
-    finally:
-        with contextlib.suppress(OSError, ValueError):
-            stdin.close()
-
-
-def _object_from_line(line: str) -> dict[str, Any]:
+def object_from_line(line: str) -> dict[str, Any]:
+    """Parse one output line, which must be a JSON object."""
     value = json.loads(line)
     if not isinstance(value, dict):
         raise ValueError(f"expected a JSON object per line, got {type(value).__name__}")
     return value
+
+
+async def run(
+    command: str,
+    *subcommands: str,
+    timeout_seconds: float | None = None,
+    stdin_lines: AsyncIterable[str] | Iterable[str] | None = None,
+    **flags: FlagValue,
+) -> AsyncGenerator[dict[str, Any]]:
+    """Run an asbctl command and yield each JSON object it prints, as it prints it.
+
+    Keyword arguments become flags: payload_type_id="X" is --payload-type-id X. Each string in
+    stdin_lines is written to the command's stdin as one line. Close the iterator with
+    contextlib.aclosing when you stop early, so that the process is stopped at once.
+
+    Args:
+        command: The asbctl command, such as peek.
+        *subcommands: Subcommands of the command, such as summary.
+        timeout_seconds: How long the whole run may take, or None for no limit.
+        stdin_lines: Lines for the stdin of the command, or None for no stdin.
+        **flags: The flags of the command.
+
+    Raises:
+        AsbctlError: asbctl exited with a non-zero code.
+        BinaryNotFoundError: The asbctl binary cannot be found.
+        TimeoutError: The run took longer than timeout_seconds.
+    """
+    arguments = build_arguments(command, subcommands, flags)
+    binary_path = get_binary_path(os.environ)
+
+    async with contextlib.aclosing(
+        _stream_lines(binary_path, arguments, stdin_lines, timeout_seconds)
+    ) as lines:
+        async for line in lines:
+            if line.strip():
+                yield object_from_line(line)
+
+
+async def run_once(
+    command: str,
+    *subcommands: str,
+    timeout_seconds: float | None = None,
+    stdin_lines: AsyncIterable[str] | Iterable[str] | None = None,
+    **flags: FlagValue,
+) -> dict[str, Any]:
+    """Run a command that prints one JSON object and return that object.
+
+    Raises:
+        ValueError: The command printed no object, or more than one.
+    """
+    objects = [
+        output
+        async for output in run(
+            command, *subcommands, timeout_seconds=timeout_seconds, stdin_lines=stdin_lines, **flags
+        )
+    ]
+    if len(objects) != 1:
+        raise ValueError(f"expected one JSON object, got {len(objects)}")
+    return objects[0]
+
+
+async def _stream_lines(
+    binary_path: str,
+    arguments: list[str],
+    stdin_lines: AsyncIterable[str] | Iterable[str] | None,
+    timeout_seconds: float | None,
+) -> AsyncGenerator[str]:
+    async with asyncio.timeout(timeout_seconds):
+        process = await _start_process(binary_path, arguments, has_stdin=stdin_lines is not None)
+        try:
+            async with asyncio.TaskGroup() as tasks:
+                stderr_task = tasks.create_task(
+                    _read_text(cast("asyncio.StreamReader", process.stderr))
+                )
+                if stdin_lines is not None:
+                    tasks.create_task(
+                        _write_lines(cast("asyncio.StreamWriter", process.stdin), stdin_lines)
+                    )
+                async for line in cast("asyncio.StreamReader", process.stdout):
+                    try:
+                        yield line.decode()
+                    except GeneratorExit:
+                        # A TaskGroup wraps GeneratorExit in an ExceptionGroup, so stop the process
+                        # here and end the generator normally.
+                        await _stop_process(process)
+                        return
+                exit_code = await process.wait()
+        finally:
+            await _stop_process(process)
+
+    if exit_code != 0:
+        raise error_from_stderr(stderr_task.result(), exit_code)
+
+
+async def _start_process(
+    binary_path: str, arguments: list[str], *, has_stdin: bool
+) -> asyncio.subprocess.Process:
+    try:
+        return await asyncio.create_subprocess_exec(
+            binary_path,
+            *arguments,
+            stdin=asyncio.subprocess.PIPE if has_stdin else asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError as error:
+        raise BinaryNotFoundError(f"no asbctl binary at {binary_path}") from error
+
+
+async def _stop_process(process: asyncio.subprocess.Process) -> None:
+    if process.returncode is None:
+        with contextlib.suppress(ProcessLookupError):
+            process.kill()
+    await process.wait()
+
+
+async def _read_text(stream: asyncio.StreamReader) -> str:
+    return (await stream.read()).decode(errors="replace")
+
+
+async def _write_lines(
+    stream: asyncio.StreamWriter, lines: AsyncIterable[str] | Iterable[str]
+) -> None:
+    # A closed pipe means the process exited early, and its exit code and stderr say why.
+    with contextlib.suppress(BrokenPipeError, ConnectionResetError):
+        try:
+            async for line in _iterate_lines(lines):
+                stream.write(f"{line}\n".encode())
+                await stream.drain()
+        finally:
+            stream.close()
+            await stream.wait_closed()
+
+
+async def _iterate_lines(lines: AsyncIterable[str] | Iterable[str]) -> AsyncGenerator[str]:
+    if isinstance(lines, AsyncIterable):
+        async for line in lines:
+            yield line
+    else:
+        for line in lines:
+            yield line
