@@ -51,9 +51,11 @@ def small_project(tmp_path: Path) -> Path:
     (project_directory / "pyproject.toml").write_text(
         '[project]\nname = "asbctl"\nversion = "0.0.1"\ndescription = "d"\n'
         'requires-python = ">=3.13"\nlicense = "MIT"\n'
+        'license-files = ["LICENSE", "THIRD_PARTY_LICENSES"]\n'
     )
     (project_directory / "README.md").write_text("# small\n")
     (project_directory / "LICENSE").write_text("MIT text\n")
+    (project_directory / "THIRD_PARTY_LICENSES").write_text("notices\n")
     return project_directory
 
 
@@ -148,6 +150,7 @@ def test_build_metadata_text_reads_the_project_table_and_appends_the_readme():
         "description": "a summary",
         "requires-python": ">=3.13",
         "license": "MIT",
+        "license-files": ["LICENSE", "THIRD_PARTY_LICENSES"],
         "authors": [{"name": "A. Person"}, {"name": "B. Person"}],
     }
 
@@ -164,6 +167,7 @@ def test_build_metadata_text_reads_the_project_table_and_appends_the_readme():
         "Requires-Python: >=3.13\n"
         "License-Expression: MIT\n"
         "License-File: LICENSE\n"
+        "License-File: THIRD_PARTY_LICENSES\n"
         "Author: A. Person\n"
         "Author: B. Person\n"
         "\n"
@@ -188,7 +192,13 @@ def test_build_record_text_lists_every_file_with_its_hash_and_size():
 
 def test_build_metadata_text_has_no_author_line_when_the_project_names_none():
     # Given
-    project = {"name": "asbctl", "description": "d", "requires-python": ">=3.13", "license": "MIT"}
+    project = {
+        "name": "asbctl",
+        "description": "d",
+        "requires-python": ">=3.13",
+        "license": "MIT",
+        "license-files": ["LICENSE"],
+    }
 
     # When
     text = build_metadata_text(project, "", "1.0.0")
@@ -261,6 +271,7 @@ def test_build_wheel_writes_the_package_the_binary_and_a_record_that_matches(
         assert "asbctl/bin/asbctl" in names
         assert "asbctl-6.5.4.dist-info/entry_points.txt" in names
         assert "asbctl-6.5.4.dist-info/licenses/LICENSE" in names
+        assert "asbctl-6.5.4.dist-info/licenses/THIRD_PARTY_LICENSES" in names
         assert names[-1] == "asbctl-6.5.4.dist-info/RECORD"
         assert archive.read("asbctl/bin/asbctl") == FAKE_BINARY
         assert (archive.getinfo("asbctl/bin/asbctl").external_attr >> 16) & 0o777 == 0o755
@@ -325,10 +336,12 @@ def test_build_wheel_reads_the_project_files_and_skips_bytecode_caches(
             "asbctl-0.0.1.dist-info/METADATA",
             "asbctl-0.0.1.dist-info/WHEEL",
             "asbctl-0.0.1.dist-info/licenses/LICENSE",
+            "asbctl-0.0.1.dist-info/licenses/THIRD_PARTY_LICENSES",
             "asbctl-0.0.1.dist-info/RECORD",
         ]
         assert archive.read("asbctl-0.0.1.dist-info/METADATA").endswith(b"\n\n# small\n")
         assert archive.read("asbctl-0.0.1.dist-info/licenses/LICENSE") == b"MIT text\n"
+        assert archive.read("asbctl-0.0.1.dist-info/licenses/THIRD_PARTY_LICENSES") == b"notices\n"
         assert {info.compress_type for info in archive.infolist()} == {zipfile.ZIP_DEFLATED}
         assert {info.date_time for info in archive.infolist()} == {(1980, 1, 1, 0, 0, 0)}
         assert {(info.external_attr >> 16) & 0o777 for info in archive.infolist()} == {0o644}

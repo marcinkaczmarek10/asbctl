@@ -67,7 +67,10 @@ def build_wheel_filename(version: str, tag: str) -> str:
 
 
 def build_metadata_text(project: Mapping[str, Any], readme_text: str, version: str) -> str:
-    """Build the METADATA file from the [project] table of pyproject.toml."""
+    """Build the METADATA file from the [project] table of pyproject.toml.
+
+    The license-files of the project are file names, not globs.
+    """
     lines = [
         "Metadata-Version: 2.4",
         f"Name: {project['name']}",
@@ -76,8 +79,8 @@ def build_metadata_text(project: Mapping[str, Any], readme_text: str, version: s
         "Description-Content-Type: text/markdown",
         f"Requires-Python: {project['requires-python']}",
         f"License-Expression: {project['license']}",
-        "License-File: LICENSE",
     ]
+    lines.extend(f"License-File: {name}" for name in project["license-files"])
     lines.extend(f"Author: {author['name']}" for author in project.get("authors", []))
     return "\n".join(lines) + "\n\n" + readme_text
 
@@ -128,7 +131,7 @@ def build_wheel(
     """Write one wheel and return its path.
 
     Args:
-        project_directory: The directory that holds pyproject.toml, README.md, LICENSE and src.
+        project_directory: The directory with pyproject.toml, README.md, license-files and src.
         version: A PEP 440 version.
         tag: A platform tag, or PURE_TAG.
         binary_path: The binary to bundle, or None for a wheel without one.
@@ -149,7 +152,10 @@ def build_wheel(
         project, (project_directory / "README.md").read_text(), version
     ).encode()
     files[f"{dist_info}/WHEEL"] = build_wheel_text(tag).encode()
-    files[f"{dist_info}/licenses/LICENSE"] = (project_directory / "LICENSE").read_bytes()
+    for license_name in project["license-files"]:
+        files[f"{dist_info}/licenses/{license_name}"] = (
+            project_directory / license_name
+        ).read_bytes()
     record_path = f"{dist_info}/RECORD"
     files[record_path] = build_record_text(files, record_path).encode()
 

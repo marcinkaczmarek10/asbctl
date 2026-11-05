@@ -56,7 +56,9 @@ The helpers are `peek`, `export`, `export_to_file`, `dlq_summary`, `send_plan`, 
 
 ## Development
 
-`go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...` must be clean before a merge. For the Python adapter, run `uv run ruff check`, `uv run ruff format --check`, `uv run ty check` and `uv run pytest` from `python/`. The hooks in `.pre-commit-config.yaml` run the same checks through [prek](https://github.com/j178/prek). The `go` line in `go.mod` is the oldest patched toolchain, so raise it when govulncheck reports a standard library fix.
+`go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...` must be clean before a merge. For the Python adapter, run `uv run ruff check`, `uv run ruff format --check`, `uv run ty check` and `uv run pytest` from `python/`. The hooks in `.pre-commit-config.yaml` run the same checks through [prek](https://github.com/j178/prek). `scripts/third-party-licenses.sh` regenerates `THIRD_PARTY_LICENSES`, the licence and notice text of the linked modules. Run it after a change to `go.mod`. CI fails when the file is stale. Release archives and every wheel carry it.
+
+The `go` line in `go.mod` is the oldest patched toolchain, so raise it when govulncheck reports a standard library fix.
 
 ## Licence
 

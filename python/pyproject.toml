@@ -4,7 +4,7 @@ version = "0.0.0.dev0"
 description = "Python adapter for the asbctl command-line tool"
 readme = "README.md"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_LICENSES"]
 authors = [{ name = "Marcin Kaczmarek" }]
 requires-python = ">=3.13"
 dependencies = []
