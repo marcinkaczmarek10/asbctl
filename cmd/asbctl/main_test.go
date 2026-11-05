@@ -34,6 +34,10 @@ func TestRun(t *testing.T) {
 		{name: "export refuses table output for records on stdout", args: []string{"export", "--namespace", "n", "--queue", "q", "--output", "table"}, wantCode: 2, wantStderrPart: "--output table cannot be used"},
 		{name: "send help prints usage and succeeds", args: []string{"send", "-h"}, wantCode: 0, wantStdout: true},
 		{name: "send without a target is a usage error", args: []string{"send", "--namespace", "n"}, wantCode: 2, wantStderrPart: "--queue or --topic is required"},
+		{name: "dlq resend help prints usage and succeeds", args: []string{"dlq", "resend", "-h"}, wantCode: 0, wantStdout: true},
+		{name: "dlq resend of a subscription without a target is a usage error", args: []string{"dlq", "resend", "--namespace", "n", "--topic", "t", "--subscription", "s"}, wantCode: 2, wantStderrPart: "has no default target"},
+		{name: "dlq purge help prints usage and succeeds", args: []string{"dlq", "purge", "-h"}, wantCode: 0, wantStdout: true},
+		{name: "dlq purge without an entity is a usage error", args: []string{"dlq", "purge", "--namespace", "n"}, wantCode: 2, wantStderrPart: "--queue or --topic"},
 		{name: "unknown flag on version is a usage error", args: []string{"version", "-x"}, wantCode: 2, wantStderrPart: "-x"},
 		{name: "extra argument on version is a usage error", args: []string{"version", "extra"}, wantCode: 2, wantStderrPart: "extra"},
 	}

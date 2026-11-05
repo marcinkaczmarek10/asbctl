@@ -93,6 +93,32 @@ With `--yes` each message is reported as it is sent, one line in `json` mode:
 
 Messages go out in batches of at most 100. A batch that fails marks every message in it as failed, and a message too large for any batch fails alone. `--rate N` spaces the batches so that they average N messages per second, and then a batch is at most N messages. If the run is cancelled while a batch is in flight, that batch is reported as failed although the broker may have accepted it, so a rerun can send it twice.
 
+## Dead-letter resend and purge
+
+`asbctl dlq resend` and `asbctl dlq purge` follow the rules in [dead-letter.md](dead-letter.md). Without `--yes`, or with `--dry-run`, each prints the plan as one JSON object and changes nothing:
+
+```json
+{"schema":1,"type":"plan","command":"dlq resend","source":{"queue":"orders"},"target":{"queue":"orders"},"selected":4,"groups":[{"payload_type_id":"OrderPlaced","dead_letter_reason":"Poison","count":3}],"snapshot":"asbctl-snapshot-orders-20261105T143005Z.ndjson","dedupe":{"enabled":true,"window_seconds":600,"assumed":false,"repeated_in_selection":2,"in_ledger":1},"warnings":[],"dry_run":false}
+```
+
+`target` and `dedupe` are only in a resend plan. `dedupe` counts the selected messages that the guard would skip: `repeated_in_selection` for those whose `MessageId` occurs twice, and `in_ledger` for those resent inside the window. `assumed` is `true` when the settings could not be read. `warnings` is a list of sentences.
+
+When the command acts, each selected message is reported as it is handled, one line in `json` mode:
+
+```json
+{"schema":1,"sequence_number":1042,"message_id":"msg-1","status":"resent"}
+```
+
+For resend `status` is `resent`, `failed`, `sent_not_completed` or `skipped_duplicate_window`, and for purge it is `purged` or `failed`. `error` is set when a message failed or was not completed. A message that the filters did not select is not reported. In table mode only the messages that did not go well are printed.
+
+The run ends with one summary object, which has `"type":"summary"` so that it can be told from the result lines:
+
+```json
+{"schema":1,"type":"summary","resent":3,"failed":0,"sent_not_completed":0,"skipped":1,"bounced":0,"stopped_on_bounce":false,"not_reached":0,"snapshot":"asbctl-snapshot-orders-20261105T143005Z.ndjson"}
+```
+
+The purge summary has `purged`, `failed`, `not_reached` and `snapshot`. `not_reached` counts selected messages that the run never received. A non-zero exit also writes the error object on stderr, with code `partial`, `stopped_on_bounce`, `resend_failed` or `purge_failed`. A snapshot path that exists is the code `file_exists`.
+
 ## Errors
 
 In `json` mode a failure is one object on stderr:

@@ -341,3 +341,25 @@ func uuidFromText(text string) (amqp.UUID, error) {
 	}
 	return id, nil
 }
+
+// deadLetterProperties are the application properties that Service Bus adds when it dead-letters a message.
+var deadLetterProperties = []string{"DeadLetterReason", "DeadLetterErrorDescription"}
+
+// OutgoingFromReceived builds the message to send back from a received dead-lettered one. The dead-letter
+// reason and description are dropped, the other fields and every other application property are kept. A body of
+// several AMQP data sections is refused, because only the first would survive the copy.
+func OutgoingFromReceived(line int, message *azservicebus.ReceivedMessage, newMessageID func() string) (bus.Outgoing, error) {
+	if raw := message.RawAMQPMessage; raw != nil && len(raw.Body.Data) > 1 {
+		return bus.Outgoing{}, fmt.Errorf("the body has %d data sections, which a resend cannot carry", len(raw.Body.Data))
+	}
+
+	rec := recordFromReceived(message)
+	for _, name := range deadLetterProperties {
+		delete(rec.ApplicationProperties, name)
+	}
+	encoded, err := json.Marshal(rec)
+	if err != nil {
+		return bus.Outgoing{}, fmt.Errorf("encode message: %w", err)
+	}
+	return outgoingFromLine(line, encoded, newMessageID)
+}

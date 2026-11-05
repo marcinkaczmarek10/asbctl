@@ -1,0 +1,5 @@
+{"schema":1,"sequence_number":1042,"message_id":"msg-1","status":"resent"}
+{"schema":1,"sequence_number":1043,"message_id":"msg-2","status":"failed","error":"the message is too large"}
+{"schema":1,"sequence_number":1044,"message_id":"msg-3","status":"sent_not_completed","error":"lock lost"}
+{"schema":1,"sequence_number":1045,"message_id":"msg-4","status":"skipped_duplicate_window"}
+{"schema":1,"type":"summary","resent":1,"failed":1,"sent_not_completed":1,"skipped":1,"bounced":1,"stopped_on_bounce":true,"not_reached":2,"snapshot":"snap.ndjson"}

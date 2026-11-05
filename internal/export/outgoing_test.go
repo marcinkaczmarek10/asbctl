@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 	"github.com/Azure/go-amqp"
 	"github.com/marcinkaczmarek10/asbctl/internal/bus"
 )
@@ -383,5 +384,74 @@ func TestDataMessageWithoutATimeToLiveHasNone(t *testing.T) {
 
 	if err != nil || outgoings[0].Message.TimeToLive != nil {
 		t.Errorf("Outgoings() = %v, %v, want no TimeToLive for zero seconds", outgoings, err)
+	}
+}
+
+func TestOutgoingFromReceivedDropsTheDeadLetterPropertiesAndKeepsTheRest(t *testing.T) {
+	enqueued := time.Date(2026, 11, 5, 10, 0, 0, 0, time.UTC)
+	message := &azservicebus.ReceivedMessage{
+		SequenceNumber: ptr(int64(7)), MessageID: "m-7", EnqueuedTime: &enqueued, Subject: ptr("s"), Body: []byte("hello"),
+		DeliveryCount: 10, DeadLetterReason: ptr("Poison"), DeadLetterErrorDescription: ptr("boom"), DeadLetterSource: ptr("orders"),
+		ApplicationProperties: map[string]any{"DeadLetterReason": "Poison", "DeadLetterErrorDescription": "boom", "PayloadTypeId": "Order", "n": int64(3)},
+	}
+
+	outgoing, err := OutgoingFromReceived(7, message, nil)
+
+	if err != nil {
+		t.Fatalf("OutgoingFromReceived() error = %v", err)
+	}
+	wantProperties := map[string]any{"PayloadTypeId": "Order", "n": int64(3)}
+	if !reflect.DeepEqual(outgoing.Message.ApplicationProperties, wantProperties) {
+		t.Errorf("ApplicationProperties = %#v, want %#v", outgoing.Message.ApplicationProperties, wantProperties)
+	}
+	if outgoing.Line != 7 || outgoing.MessageID != "m-7" || outgoing.PayloadTypeID != "Order" || string(outgoing.Message.Body) != "hello" || *outgoing.Message.Subject != "s" {
+		t.Errorf("outgoing = %+v, want line 7, id m-7, payload Order, the body and the subject", outgoing)
+	}
+	if _, stillThere := message.ApplicationProperties["DeadLetterReason"]; !stillThere {
+		t.Error("the received message was changed: its own properties lost the dead-letter reason")
+	}
+}
+
+func TestOutgoingFromReceivedKeepsAnAnnotatedBodyAndAppliesNewIDs(t *testing.T) {
+	message := &azservicebus.ReceivedMessage{
+		SequenceNumber: ptr(int64(1)), MessageID: "old",
+		RawAMQPMessage: &azservicebus.AMQPAnnotatedMessage{Body: azservicebus.AMQPAnnotatedMessageBody{Value: map[any]any{"id": int64(7)}}},
+	}
+
+	outgoing, err := OutgoingFromReceived(1, message, func() string { return "new" })
+
+	if err != nil {
+		t.Fatalf("OutgoingFromReceived() error = %v", err)
+	}
+	if outgoing.Annotated == nil || outgoing.MessageID != "new" || outgoing.Annotated.ApplicationProperties[OriginalMessageIDProperty] != "old" {
+		t.Errorf("outgoing = %+v, want an annotated message with the new id and the original in a property", outgoing)
+	}
+	if !reflect.DeepEqual(outgoing.Annotated.Body.Value, map[string]any{"id": int64(7)}) {
+		t.Errorf("Body.Value = %#v, want the map restored", outgoing.Annotated.Body.Value)
+	}
+}
+
+func TestOutgoingFromReceivedRefusesSeveralDataSections(t *testing.T) {
+	message := &azservicebus.ReceivedMessage{
+		RawAMQPMessage: &azservicebus.AMQPAnnotatedMessage{Body: azservicebus.AMQPAnnotatedMessageBody{Data: [][]byte{{1}, {2}}}},
+	}
+
+	_, err := OutgoingFromReceived(1, message, nil)
+
+	if err == nil || !strings.Contains(err.Error(), "2 data sections") {
+		t.Errorf("OutgoingFromReceived() error = %v, want a refusal that counts the sections", err)
+	}
+}
+
+func TestOutgoingFromReceivedAcceptsOneDataSection(t *testing.T) {
+	message := &azservicebus.ReceivedMessage{
+		Body:           []byte("x"),
+		RawAMQPMessage: &azservicebus.AMQPAnnotatedMessage{Body: azservicebus.AMQPAnnotatedMessageBody{Data: [][]byte{[]byte("x")}}},
+	}
+
+	outgoing, err := OutgoingFromReceived(1, message, nil)
+
+	if err != nil || string(outgoing.Message.Body) != "x" {
+		t.Errorf("OutgoingFromReceived() = %+v, %v, want the single data section sent", outgoing, err)
 	}
 }

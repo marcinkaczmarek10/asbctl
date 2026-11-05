@@ -23,6 +23,8 @@ Usage:
 
 Commands:
   summary  group the dead-lettered messages by payload type and reason
+  resend   send dead-lettered messages back and complete their dead-letter copies
+  purge    remove dead-lettered messages
 `
 
 const summaryUsageText = `Usage:
@@ -58,6 +60,10 @@ func runDLQ(ctx context.Context, args []string, stdout, stderr io.Writer, logger
 	switch name {
 	case "summary":
 		return runDLQSummary(ctx, rest, stdout, stderr, logger)
+	case "resend":
+		return runDLQResend(ctx, rest, stdout, stderr, logger)
+	case "purge":
+		return runDLQPurge(ctx, rest, stdout, stderr, logger)
 	case "-h", "-help", "--help":
 		fmt.Fprint(stdout, dlqUsageText)
 		return exitOK
