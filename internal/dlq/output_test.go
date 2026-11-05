@@ -225,3 +225,70 @@ func TestLocationString(t *testing.T) {
 		}
 	}
 }
+
+func TestWritePlanTableExactOutput(t *testing.T) {
+	tests := []struct {
+		name string
+		plan Plan
+		want string
+	}{
+		{
+			name: "a purge plan with groups and no warnings",
+			plan: NewPurgePlan(bus.Target{Queue: "orders", DeadLetter: true}, Selection{Entries: []Entry{{PayloadTypeID: "Order", Reason: "Poison"}}}, "snap.ndjson", false),
+			want: "command:   dlq purge\nsource:    queue orders (dead-letter queue)\nselected:  1\n" +
+				"snapshot:  snap.ndjson (written when the command runs)\n\n" +
+				"COUNT  PAYLOAD_TYPE  REASON\n1      Order         Poison\n\nNothing was changed. Pass --yes to run it.\n",
+		},
+		{
+			name: "an empty selection has no table",
+			plan: NewPurgePlan(bus.Target{Queue: "orders", DeadLetter: true}, Selection{}, "snap.ndjson", true),
+			want: "command:   dlq purge\nsource:    queue orders (dead-letter queue)\nselected:  0\n" +
+				"snapshot:  snap.ndjson (not written in a dry run)\n\nDry run: nothing was changed.\n",
+		},
+		{
+			name: "a warning follows the table on its own line",
+			plan: Plan{Command: "dlq purge", Source: Location{Queue: "q"}, Warnings: []string{"careful"}},
+			want: "command:   dlq purge\nsource:    queue q (dead-letter queue)\nselected:  0\n\nWarning: careful.\n\nNothing was changed. Pass --yes to run it.\n",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+
+			if err := WritePlan(&out, export.FormatTable, tc.plan); err != nil || out.String() != tc.want {
+				t.Errorf("WritePlan() =\n%q\nwant\n%q", out.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestDedupeText(t *testing.T) {
+	tests := []struct {
+		name string
+		plan DedupePlan
+		want string
+	}{
+		{name: "off", plan: DedupePlan{}, want: "off"},
+		{name: "on", plan: DedupePlan{Enabled: true, WindowSeconds: 600}, want: "on, window 10m0s"},
+		{name: "assumed", plan: DedupePlan{Enabled: true, WindowSeconds: 600, Assumed: true}, want: "on, window 10m0s (assumed)"},
+		{name: "only repeats", plan: DedupePlan{Enabled: true, WindowSeconds: 60, RepeatedInSelection: 2}, want: "on, window 1m0s: 2 repeat a MessageId in the selection and 0 were resent inside the window, and will be skipped"},
+		{name: "only ledger hits", plan: DedupePlan{Enabled: true, WindowSeconds: 60, InLedger: 1}, want: "on, window 1m0s: 0 repeat a MessageId in the selection and 1 were resent inside the window, and will be skipped"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := dedupeText(tc.plan); got != tc.want {
+				t.Errorf("dedupeText() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestWritePurgeSummaryTableWithoutAnythingNotReached(t *testing.T) {
+	var out bytes.Buffer
+
+	_ = WritePurgeSummary(&out, export.FormatTable, PurgeSummary{Purged: 3, Snapshot: "snap"})
+
+	if want := "Purged 3, failed 0.\nSnapshot: snap\n"; out.String() != want {
+		t.Errorf("summary = %q, want %q", out.String(), want)
+	}
+}

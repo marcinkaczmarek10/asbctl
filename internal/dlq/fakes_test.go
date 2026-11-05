@@ -42,6 +42,7 @@ type fakeQueue struct {
 	abandoned   []int64
 	completeErr map[int64]error
 	receives    int
+	peeks       int
 	receiveErr  error
 	onReceive   func()
 }
@@ -93,6 +94,7 @@ func (q *fakeQueue) AbandonMessage(_ context.Context, message *azservicebus.Rece
 }
 
 func (q *fakeQueue) PeekMessages(_ context.Context, count int, options *azservicebus.PeekMessagesOptions) ([]*azservicebus.ReceivedMessage, error) {
+	q.peeks++
 	from := int64(0)
 	if options.FromSequenceNumber != nil {
 		from = *options.FromSequenceNumber

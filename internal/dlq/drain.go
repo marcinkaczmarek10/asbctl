@@ -44,8 +44,8 @@ func drain(
 			return handled, err
 		}
 
-		candidates, unseen := sortBatch(batch, selected, seen, hold)
-		if unseen == 0 {
+		candidates, sawNew := sortBatch(batch, selected, seen, hold)
+		if !sawNew {
 			return handled, nil
 		}
 		if len(candidates) == 0 {
@@ -62,13 +62,13 @@ func drain(
 }
 
 // sortBatch splits a received batch into the selected messages seen for the first time, which it returns, and
-// the rest, which it holds. unseen counts the messages that were new, selected or not.
+// the rest, which it holds. sawNew is true when any message was new, selected or not.
 func sortBatch(
 	batch []*azservicebus.ReceivedMessage,
 	selected map[int64]Entry,
 	seen map[int64]struct{},
 	hold func(*azservicebus.ReceivedMessage),
-) (candidates []candidate, unseen int) {
+) (candidates []candidate, sawNew bool) {
 	for _, message := range batch {
 		entry := EntryFromMessage(message)
 		if _, again := seen[entry.SequenceNumber]; again {
@@ -76,7 +76,7 @@ func sortBatch(
 			continue
 		}
 		seen[entry.SequenceNumber] = struct{}{}
-		unseen++
+		sawNew = true
 
 		if _, wanted := selected[entry.SequenceNumber]; !wanted {
 			hold(message)
@@ -84,7 +84,7 @@ func sortBatch(
 		}
 		candidates = append(candidates, candidate{Entry: entry, Message: message})
 	}
-	return candidates, unseen
+	return candidates, sawNew
 }
 
 // releaseHeld abandons what a run held back. A lock that already expired makes Abandon fail, which is fine: the

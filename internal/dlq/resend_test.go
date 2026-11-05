@@ -458,3 +458,42 @@ func TestResendExitCode(t *testing.T) {
 		})
 	}
 }
+
+func TestResendLooksForBouncesInTheLastPartialWave(t *testing.T) {
+	queue := newFakeQueue(dlMessage(1, "a", "", "r"), dlMessage(2, "b", "", "r"))
+	f := newResendFixture(t, queue, Filter{})
+	f.params.StopOnBounce = 0
+	f.sender.onSend = bounceWhenSent(queue, func(line int) bool { return line == 2 })
+
+	summary := f.run(t)
+
+	if summary.Bounced != 1 {
+		t.Errorf("Bounced = %d, want the bounce from a wave that never filled up", summary.Bounced)
+	}
+}
+
+func TestResendScansOncePerWaveAndNotAgainAfterAFullWave(t *testing.T) {
+	queue := newFakeQueue(dlMessage(1, "a", "", "r"), dlMessage(2, "b", "", "r"))
+	f := newResendFixture(t, queue, Filter{})
+	f.params.Wave, f.params.BatchSize = 2, 2
+	queue.peeks = 0
+
+	f.run(t)
+
+	if queue.peeks != 1 {
+		t.Errorf("peeks = %d, want 1: the full wave was scanned and nothing was left over", queue.peeks)
+	}
+}
+
+func TestResendEndsAWaveAsSoonAsItIsFull(t *testing.T) {
+	queue := sixMessageQueue()
+	f := newResendFixture(t, queue, Filter{})
+	f.params.Wave, f.params.BatchSize, f.params.StopOnBounce = 2, 2, 50
+	f.sender.onSend = bounceWhenSent(queue, func(line int) bool { return line <= 2 })
+
+	summary := f.run(t)
+
+	if !summary.StoppedOnBounce || summary.Resent != 2 || summary.NotReached != 4 {
+		t.Errorf("summary = %+v, want the run stopped after the first full wave of 2", summary)
+	}
+}

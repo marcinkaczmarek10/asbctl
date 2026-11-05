@@ -211,7 +211,7 @@ func (r *resendRun) endWave(ctx context.Context) error {
 
 func (r *resendRun) watch(ctx context.Context) error {
 	deadline := r.deps.Now().Add(r.params.Watch)
-	for r.params.Watch > 0 {
+	for {
 		remaining := deadline.Sub(r.deps.Now())
 		if remaining <= 0 {
 			return nil
@@ -224,5 +224,4 @@ func (r *resendRun) watch(ctx context.Context) error {
 		}
 		r.summary.Bounced = r.scanner.Bounced()
 	}
-	return nil
 }
