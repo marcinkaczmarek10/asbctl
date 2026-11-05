@@ -29,6 +29,9 @@ func TestRun(t *testing.T) {
 		{name: "dlq help prints usage and succeeds", args: []string{"dlq", "-h"}, wantCode: 0, wantStdout: true},
 		{name: "dlq summary help prints usage and succeeds", args: []string{"dlq", "summary", "-h"}, wantCode: 0, wantStdout: true},
 		{name: "dlq summary without an entity is a usage error", args: []string{"dlq", "summary", "--namespace", "n"}, wantCode: 2, wantStderrPart: "--queue or --topic"},
+		{name: "export help prints usage and succeeds", args: []string{"export", "-h"}, wantCode: 0, wantStdout: true},
+		{name: "export without an entity is a usage error", args: []string{"export", "--namespace", "n"}, wantCode: 2, wantStderrPart: "--queue or --topic"},
+		{name: "export refuses table output for records on stdout", args: []string{"export", "--namespace", "n", "--queue", "q", "--output", "table"}, wantCode: 2, wantStderrPart: "--output table cannot be used"},
 		{name: "unknown flag on version is a usage error", args: []string{"version", "-x"}, wantCode: 2, wantStderrPart: "-x"},
 		{name: "extra argument on version is a usage error", args: []string{"version", "extra"}, wantCode: 2, wantStderrPart: "extra"},
 	}

@@ -55,6 +55,18 @@ A JSON string, number or bool is written as is. Any other AMQP type is written a
 
 `partial` is `true` when `dead_letter_messages` is known and larger than `peeked`. When it is unknown, `partial` is `true` if `peeked` reached `--max`, because the queue may hold more. The table prints a line saying the summary covers N of M messages.
 
+## Export
+
+`asbctl export` writes the messages of an entity as message records, one NDJSON line each, in the format above. It peeks, so it never locks or removes a message, and it takes the same `--dlq`, `--max` (default 10000) and `--payload-type-id` flags as `peek`. The filter runs after peeking, so skipped messages still count toward `--max`.
+
+The records go to `--file`, or to stdout when `--file` is absent or `-`. Records are always JSON, so `--output table` is a usage error when they go to stdout. With `--file`, stdout carries the result instead: a table-mode sentence (the default), or with `--output json` one object:
+
+```json
+{"schema":1,"exported":4,"file":"orders.ndjson","partial":true}
+```
+
+`partial` is `true` when the peek reached `--max`, because the entity may hold more. The file is written to `<file>.tmp` and renamed when the export succeeds, so a failed or interrupted export leaves nothing under the final name. An existing file is an error (`file_exists`) unless `--force` is given. Progress is logged on stderr every 1000 messages peeked.
+
 ## Errors
 
 In `json` mode a failure is one object on stderr:

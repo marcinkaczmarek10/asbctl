@@ -98,11 +98,17 @@ func TestContractFilesMatchTheWriters(t *testing.T) {
 	}
 	WriteError(&failure, FormatJSON, "peek_failed", errors.New("service unavailable"))
 
+	var exported bytes.Buffer
+	if err := WriteExportResult(&exported, FormatJSON, ExportResult{Schema: Schema, Exported: 4, File: "orders.ndjson", Partial: true}); err != nil {
+		t.Fatalf("WriteExportResult() error = %v", err)
+	}
+
 	files := map[string]string{
 		"messages.ndjson":          messages.String(),
 		"summary.json":             summary.String(),
 		"summary_unavailable.json": unavailable.String(),
 		"error.json":               failure.String(),
+		"export_result.json":       exported.String(),
 	}
 	for name, got := range files {
 		t.Run(name, func(t *testing.T) {

@@ -26,6 +26,7 @@ Usage:
 Commands:
   peek     peek queue and subscription messages without removing them
   dlq      work with dead-letter queues
+  export   write the messages of a queue or subscription as NDJSON records
   version  print the asbctl version
   help     print this help
 
@@ -57,6 +58,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer, logger *s
 		return runPeek(ctx, rest, stdout, stderr, logger)
 	case "dlq":
 		return runDLQ(ctx, rest, stdout, stderr, logger)
+	case "export":
+		return runExport(ctx, rest, stdout, stderr, logger)
 	case "help", "-h", "-help", "--help":
 		fmt.Fprint(stdout, usageText)
 		return exitOK
