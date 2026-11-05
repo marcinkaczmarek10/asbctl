@@ -43,7 +43,7 @@ for message in peek(namespace="contoso", queue="orders", dlq=True, payload_type_
     print(message.message_id, message.body_text)
 ```
 
-The helpers are `peek`, `export`, `export_to_file`, `dlq_summary`, `send_plan` and `send`. `send` takes `Message` objects or dicts in the export format and yields one `SendResult` per message. Failures raise `AsbctlError` with the `code`, `message` and `exit_code` that `asbctl` reported.
+The helpers are `peek`, `export`, `export_to_file`, `dlq_summary`, `send_plan`, `send`, `dlq_resend_plan`, `dlq_resend`, `dlq_purge_plan` and `dlq_purge`. `send` takes `Message` objects or dicts in the export format and yields one `SendResult` per message. Failures raise `AsbctlError` with the `code`, `message` and `exit_code` that `asbctl` reported.
 
 ## Development
 
