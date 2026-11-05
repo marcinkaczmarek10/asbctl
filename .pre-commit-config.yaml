@@ -1,0 +1,34 @@
+# Run with prek: `uv run --project python prek install`. The Python tools come from python/uv.lock.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run --locked --project python ruff check python
+        language: system
+        files: ^python/
+        pass_filenames: false
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --locked --project python ruff format --check python
+        language: system
+        files: ^python/
+        pass_filenames: false
+      - id: ty
+        name: ty check
+        entry: uv run --locked --project python ty check --project python
+        language: system
+        files: ^python/
+        pass_filenames: false
+      - id: gofmt
+        name: gofmt
+        entry: bash -c 'test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }'
+        language: system
+        types: [go]
+        pass_filenames: false
+      - id: go-vet
+        name: go vet
+        entry: go vet ./...
+        language: system
+        types: [go]
+        pass_filenames: false

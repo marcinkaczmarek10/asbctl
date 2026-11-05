@@ -27,9 +27,25 @@ Run "asbctl <command> -h" for the flags of a command.
 
 Output is a table by default and NDJSON with `--output json`. The record shape, error object and exit codes are in [docs/output-format.md](docs/output-format.md). The rules for dead-letter commands are in [docs/dead-letter.md](docs/dead-letter.md).
 
+## Python
+
+`python/` holds a zero-dependency adapter that runs `asbctl --output json` and returns typed results. It needs Python 3.13 or later, and finds the binary through `ASBCTL_BIN` or `PATH`.
+
+```python
+from asbctl import AsbctlError, dlq_summary, peek
+
+summary = dlq_summary(namespace="contoso", queue="orders")
+for group in summary.groups:
+    print(group.count, group.payload_type_id or "(none)", group.dead_letter_reason)
+for message in peek(namespace="contoso", queue="orders", dlq=True, payload_type_id="OrderPlaced", max_messages=10):
+    print(message.message_id, message.body_text)
+```
+
+Failures raise `AsbctlError` with the `code`, `message` and `exit_code` that `asbctl` reported.
+
 ## Development
 
-`go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...` must be clean before a merge. The `go` line in `go.mod` is the oldest patched toolchain, so raise it when govulncheck reports a standard library fix.
+`go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...` must be clean before a merge. For the Python adapter, run `uv run ruff check`, `uv run ruff format --check`, `uv run ty check` and `uv run pytest` from `python/`. The hooks in `.pre-commit-config.yaml` run the same checks through [prek](https://github.com/j178/prek). The `go` line in `go.mod` is the oldest patched toolchain, so raise it when govulncheck reports a standard library fix.
 
 ## Licence
 
