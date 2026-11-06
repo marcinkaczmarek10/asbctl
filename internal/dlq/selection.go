@@ -64,14 +64,13 @@ type Group struct {
 	Count            int    `json:"count"`
 }
 
-// MessageIDs returns the selected entries grouped by MessageId. A MessageId can appear more than once on a
-// dead-letter queue (the same message dead-lettered twice), so the value is a slice.
-func (s Selection) MessageIDs() map[string][]Entry {
-	ids := make(map[string][]Entry, len(s.Entries))
+// Sequences returns the sequence numbers of the selected messages.
+func (s Selection) Sequences() map[int64]Entry {
+	sequences := make(map[int64]Entry, len(s.Entries))
 	for _, entry := range s.Entries {
-		ids[entry.MessageID] = append(ids[entry.MessageID], entry)
+		sequences[entry.SequenceNumber] = entry
 	}
-	return ids
+	return sequences
 }
 
 // DuplicateIDs returns the MessageIds that occur more than once in the selection. Empty ids do not count.

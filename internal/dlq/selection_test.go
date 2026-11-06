@@ -104,11 +104,11 @@ func TestSelectionSets(t *testing.T) {
 		{SequenceNumber: 4, MessageID: ""}, {SequenceNumber: 5, MessageID: ""},
 	}}
 
-	ids := selection.MessageIDs()
+	sequences := selection.Sequences()
 	duplicates := selection.DuplicateIDs()
 
-	if len(ids["a"]) != 2 || len(ids["b"]) != 1 || len(ids[""]) != 2 {
-		t.Errorf("MessageIDs() = %v, want a:2, b:1, empty:2", ids)
+	if len(sequences) != 5 || sequences[3].MessageID != "b" {
+		t.Errorf("Sequences() = %v, want 5 entries keyed by sequence number", sequences)
 	}
 	if !reflect.DeepEqual(duplicates, map[string]struct{}{"a": {}}) {
 		t.Errorf("DuplicateIDs() = %v, want only a: b occurs once and empty ids do not count", duplicates)

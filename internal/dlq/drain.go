@@ -45,25 +45,21 @@ func drain(
 	ctx context.Context,
 	receiver bus.SettlingReceiver,
 	options drainOptions,
-	selected map[string][]Entry,
+	selected map[int64]Entry,
 	process func(ctx context.Context, candidates []candidate, hold func(*azservicebus.ReceivedMessage)) (stop bool, err error),
 ) (result drainResult, err error) {
 	var held []*azservicebus.ReceivedMessage
 	defer func() { releaseHeld(ctx, receiver, options.Logger, held) }()
 	hold := func(message *azservicebus.ReceivedMessage) { held = append(held, message) }
 
-	total := 0
-	for _, entries := range selected {
-		total += len(entries)
-	}
-	matched := make(map[string]int)
-	for result.Handled < total {
+	seen := make(map[int64]struct{})
+	for result.Handled < len(selected) {
 		batch, err := bus.ReceiveBatch(ctx, receiver, options.BatchSize)
 		if err != nil {
 			return result, err
 		}
 
-		candidates, sawNew := sortBatch(batch, selected, matched, hold)
+		candidates, sawNew := sortBatch(batch, selected, seen, hold)
 		if !sawNew {
 			return result, nil
 		}
@@ -83,27 +79,28 @@ func drain(
 	return result, nil
 }
 
-// sortBatch splits a received batch into the selected messages, which it returns, and the rest, which it holds.
-// Matching is by MessageId because PeekMessages and ReceiveMessages return different sequence numbers on a
-// dead-letter sub-queue. sawNew is true when any message was new.
+// sortBatch splits a received batch into the selected messages seen for the first time, which it returns, and
+// the rest, which it holds. sawNew is true when any message was new, selected or not.
 func sortBatch(
 	batch []*azservicebus.ReceivedMessage,
-	selected map[string][]Entry,
-	matched map[string]int,
+	selected map[int64]Entry,
+	seen map[int64]struct{},
 	hold func(*azservicebus.ReceivedMessage),
 ) (candidates []candidate, sawNew bool) {
 	for _, message := range batch {
 		entry := EntryFromMessage(message)
-		sawNew = true
-
-		entries, wanted := selected[entry.MessageID]
-		if !wanted || matched[entry.MessageID] >= len(entries) {
+		if _, again := seen[entry.SequenceNumber]; again {
 			hold(message)
 			continue
 		}
-		selEntry := entries[matched[entry.MessageID]]
-		matched[entry.MessageID]++
-		candidates = append(candidates, candidate{Entry: selEntry, Message: message})
+		seen[entry.SequenceNumber] = struct{}{}
+		sawNew = true
+
+		if _, wanted := selected[entry.SequenceNumber]; !wanted {
+			hold(message)
+			continue
+		}
+		candidates = append(candidates, candidate{Entry: entry, Message: message})
 	}
 	return candidates, sawNew
 }
