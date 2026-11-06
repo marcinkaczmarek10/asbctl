@@ -12,6 +12,11 @@ import (
 const (
 	settleTimeout  = 30 * time.Second
 	releaseTimeout = 60 * time.Second
+
+	// DefaultReleaseGrace is how long a run waits after abandoning its held messages before the receiver closes.
+	// Closing at once left abandoned dead-letter messages locked for the whole lock duration (measured against a
+	// live namespace), so an immediate rerun found nothing to receive.
+	DefaultReleaseGrace = 2 * time.Second
 )
 
 // candidate is a locked message that the selection asked for.
@@ -21,10 +26,12 @@ type candidate struct {
 }
 
 // drainOptions tune a drain. MaxHeld caps how many messages a run holds locked, and zero means no cap.
+// ReleaseGrace is the wait after releasing held messages, and zero means none.
 type drainOptions struct {
-	BatchSize int
-	MaxHeld   int
-	Logger    *slog.Logger
+	BatchSize    int
+	MaxHeld      int
+	ReleaseGrace time.Duration
+	Logger       *slog.Logger
 }
 
 // drainResult says how many selected messages a drain handled, and whether it stopped at the hold cap.
@@ -49,7 +56,7 @@ func drain(
 	process func(ctx context.Context, candidates []candidate, hold func(*azservicebus.ReceivedMessage)) (stop bool, err error),
 ) (result drainResult, err error) {
 	var held []*azservicebus.ReceivedMessage
-	defer func() { releaseHeld(ctx, receiver, options.Logger, held) }()
+	defer func() { releaseHeld(ctx, receiver, options.Logger, options.ReleaseGrace, held) }()
 	hold := func(message *azservicebus.ReceivedMessage) { held = append(held, message) }
 
 	seen := make(map[int64]struct{})
@@ -108,7 +115,7 @@ func sortBatch(
 // releaseHeld abandons what a run held back. A lock that already expired makes Abandon fail, which is fine: the
 // message is available again either way, so the failures are counted and logged once. It runs on its own deadline
 // so that a cancelled run still releases.
-func releaseHeld(ctx context.Context, receiver bus.SettlingReceiver, logger *slog.Logger, held []*azservicebus.ReceivedMessage) {
+func releaseHeld(ctx context.Context, receiver bus.SettlingReceiver, logger *slog.Logger, grace time.Duration, held []*azservicebus.ReceivedMessage) {
 	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()
 
@@ -120,6 +127,14 @@ func releaseHeld(ctx context.Context, receiver bus.SettlingReceiver, logger *slo
 	}
 	if failed > 0 {
 		logger.WarnContext(ctx, "held messages were not abandoned and return when their locks expire", "failed", failed, "held", len(held))
+	}
+	if len(held) > failed {
+		timer := time.NewTimer(grace)
+		defer timer.Stop()
+		select {
+		case <-timer.C:
+		case <-releaseCtx.Done():
+		}
 	}
 }
 

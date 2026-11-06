@@ -78,7 +78,7 @@ func purge(ctx context.Context, cfg selectionConfig, connectionString string, st
 	}
 	logger.InfoContext(ctx, "snapshot written", "file", cfg.snapshot, "messages", len(selection.Entries))
 
-	summary, err := dlq.Purge(ctx, receiver, selection, cfg.snapshot, dlq.PurgeOptions{MaxHeld: cfg.maxScan, Logger: logger}, func(result dlq.Result) error {
+	summary, err := dlq.Purge(ctx, receiver, selection, cfg.snapshot, dlq.PurgeOptions{MaxHeld: cfg.maxScan, ReleaseGrace: dlq.DefaultReleaseGrace, Logger: logger}, func(result dlq.Result) error {
 		return dlq.WriteResult(stdout, cfg.format, result)
 	})
 	if err != nil {

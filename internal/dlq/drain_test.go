@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 )
@@ -73,7 +74,7 @@ func TestReleaseHeldCountsAbandonFailuresAndLogsThemOnce(t *testing.T) {
 	queue.abandonErr[1], queue.abandonErr[3] = errBoom, errBoom
 	var logs bytes.Buffer
 
-	releaseHeld(context.Background(), queue, slog.New(slog.NewTextHandler(&logs, nil)), queue.messages)
+	releaseHeld(context.Background(), queue, slog.New(slog.NewTextHandler(&logs, nil)), 0, queue.messages)
 
 	if got := strings.Count(logs.String(), "level=WARN"); got != 1 {
 		t.Fatalf("warnings = %d in %q, want exactly one", got, logs.String())
@@ -92,7 +93,7 @@ func TestReleaseHeldLogsNothingWhenEveryAbandonSucceeds(t *testing.T) {
 	queue := newFakeQueue(dlMessage(1, "a", "", "r"))
 	var logs bytes.Buffer
 
-	releaseHeld(context.Background(), queue, slog.New(slog.NewTextHandler(&logs, nil)), queue.messages)
+	releaseHeld(context.Background(), queue, slog.New(slog.NewTextHandler(&logs, nil)), 0, queue.messages)
 
 	if logs.Len() != 0 {
 		t.Errorf("log = %q, want nothing", logs.String())
@@ -138,5 +139,33 @@ func TestDrainDoesNotCallProcessForABatchWithNothingSelected(t *testing.T) {
 
 	if err != nil || calls != 1 {
 		t.Errorf("process calls = %d, error = %v, want 1: the first batch of 100 held none of the selected messages", calls, err)
+	}
+}
+
+func TestReleaseHeldWaitsTheGraceAfterAbandoning(t *testing.T) {
+	queue := newFakeQueue(dlMessage(1, "a", "", "r"))
+	grace := 50 * time.Millisecond
+
+	start := time.Now()
+	releaseHeld(context.Background(), queue, discardLogger, grace, queue.messages)
+
+	if elapsed := time.Since(start); elapsed < grace {
+		t.Errorf("releaseHeld returned after %s, want at least the %s grace so the receiver does not close on the abandon", elapsed, grace)
+	}
+}
+
+func TestReleaseHeldSkipsTheGraceWhenNothingWasAbandoned(t *testing.T) {
+	queue := newFakeQueue(dlMessage(1, "a", "", "r"))
+	queue.abandonErr[1] = errBoom
+
+	for name, held := range map[string][]*azservicebus.ReceivedMessage{"nothing held": nil, "every abandon failed": queue.messages} {
+		t.Run(name, func(t *testing.T) {
+			start := time.Now()
+			releaseHeld(context.Background(), queue, discardLogger, time.Second, held)
+
+			if elapsed := time.Since(start); elapsed >= time.Second {
+				t.Errorf("releaseHeld waited %s, want no grace when no abandon went through", elapsed)
+			}
+		})
 	}
 }
