@@ -143,7 +143,9 @@ async def run_once(
         ValueError: The command printed no object, or more than one.
     """
     async with contextlib.aclosing(
-        run(command, *subcommands, timeout_seconds=timeout_seconds, stdin_lines=stdin_lines, **flags)
+        run(
+            command, *subcommands, timeout_seconds=timeout_seconds, stdin_lines=stdin_lines, **flags
+        )
     ) as stream:
         objects = [output async for output in stream]
     if len(objects) != 1:
