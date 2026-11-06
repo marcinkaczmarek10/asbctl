@@ -36,6 +36,10 @@ func dlMessage(seq int64, id, payloadTypeID, reason string) *azservicebus.Receiv
 
 // fakeQueue is a dead-letter queue. Receive hands out unlocked messages in sequence order and locks them,
 // Abandon unlocks, Complete removes, and Peek reads everything that is still in the queue.
+//
+// Receive models the SDK's link credit: a request tops the open credit up to its size and every delivered
+// message uses one. A message abandoned while credit is open is redelivered into it, as the broker does, and
+// stays locked: those are recorded in stuck.
 type fakeQueue struct {
 	messages    []*azservicebus.ReceivedMessage
 	locked      map[int64]bool
@@ -44,7 +48,11 @@ type fakeQueue struct {
 	completeErr map[int64]error
 	abandonErr  map[int64]error
 	receives    int
+	requests    []int
+	credits     int
+	stuck       []int64
 	peeks       int
+	peekFroms   []int64
 	receiveErr  error
 	onReceive   func()
 }
@@ -65,9 +73,11 @@ func (q *fakeQueue) ReceiveMessages(_ context.Context, maxMessages int, _ *azser
 	if q.receiveErr != nil {
 		return nil, q.receiveErr
 	}
+	q.requests = append(q.requests, maxMessages)
+	q.credits = max(q.credits, maxMessages)
 	var batch []*azservicebus.ReceivedMessage
 	for _, message := range q.messages {
-		if len(batch) == maxMessages {
+		if len(batch) == q.credits {
 			break
 		}
 		if !q.locked[*message.SequenceNumber] {
@@ -75,6 +85,7 @@ func (q *fakeQueue) ReceiveMessages(_ context.Context, maxMessages int, _ *azser
 			batch = append(batch, message)
 		}
 	}
+	q.credits -= len(batch)
 	return batch, nil
 }
 
@@ -95,6 +106,11 @@ func (q *fakeQueue) AbandonMessage(_ context.Context, message *azservicebus.Rece
 		return err
 	}
 	q.abandoned = append(q.abandoned, seq)
+	if q.credits > 0 {
+		q.credits--
+		q.stuck = append(q.stuck, seq)
+		return nil
+	}
 	delete(q.locked, seq)
 	return nil
 }
@@ -105,6 +121,7 @@ func (q *fakeQueue) PeekMessages(_ context.Context, count int, options *azservic
 	if options.FromSequenceNumber != nil {
 		from = *options.FromSequenceNumber
 	}
+	q.peekFroms = append(q.peekFroms, from)
 	var page []*azservicebus.ReceivedMessage
 	for _, message := range q.messages {
 		if len(page) == count {

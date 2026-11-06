@@ -211,3 +211,28 @@ func TestSelectWithSnapshotRefusesAnExistingFileAndLeavesNoFileOnAFailure(t *tes
 		t.Errorf("a failed selection left %s behind: %v", failing, statErr)
 	}
 }
+
+func TestSelectRecordsHowFarTheSelectionReachesAndTheNextSequence(t *testing.T) {
+	queue := newFakeQueue(dlMessage(1, "a", "Noise", "r"), dlMessage(2, "b", "Order", "r"), dlMessage(3, "c", "Noise", "r"), dlMessage(4, "d", "Order", "r"), dlMessage(5, "e", "Noise", "r"))
+
+	for _, tt := range []struct {
+		name         string
+		max          int
+		through      int
+		nextSequence int64
+	}{
+		{name: "no limit reads the whole queue", max: 0, through: 4, nextSequence: 6},
+		{name: "a limit stops at the last selected message", max: 1, through: 2, nextSequence: 3},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			selection, err := Select(context.Background(), queue, Filter{PayloadTypeID: "Order"}, tt.max, func(*azservicebus.ReceivedMessage) error { return nil })
+
+			if err != nil {
+				t.Fatalf("Select() error = %v", err)
+			}
+			if selection.Through != tt.through || selection.NextSequence != tt.nextSequence {
+				t.Errorf("Through = %d, NextSequence = %d, want %d and %d", selection.Through, selection.NextSequence, tt.through, tt.nextSequence)
+			}
+		})
+	}
+}

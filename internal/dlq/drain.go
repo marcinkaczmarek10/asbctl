@@ -12,11 +12,6 @@ import (
 const (
 	settleTimeout  = 30 * time.Second
 	releaseTimeout = 60 * time.Second
-
-	// DefaultReleaseGrace is how long a run waits after abandoning its held messages before the receiver closes.
-	// Closing at once left abandoned dead-letter messages locked for the whole lock duration (measured against a
-	// live namespace), so an immediate rerun found nothing to receive.
-	DefaultReleaseGrace = 2 * time.Second
 )
 
 // candidate is a locked message that the selection asked for.
@@ -25,13 +20,13 @@ type candidate struct {
 	Message *azservicebus.ReceivedMessage
 }
 
-// drainOptions tune a drain. MaxHeld caps how many messages a run holds locked, and zero means no cap.
-// ReleaseGrace is the wait after releasing held messages, and zero means none.
+// drainOptions tune a drain. MaxHeld caps how many messages a run holds locked, and zero means no cap. Budget is
+// the most messages a run receives in total, and zero means no limit.
 type drainOptions struct {
-	BatchSize    int
-	MaxHeld      int
-	ReleaseGrace time.Duration
-	Logger       *slog.Logger
+	BatchSize int
+	MaxHeld   int
+	Budget    int
+	Logger    *slog.Logger
 }
 
 // drainResult says how many selected messages a drain handled, and whether it stopped at the hold cap.
@@ -47,7 +42,12 @@ type drainResult struct {
 // behind it. The lock expires by itself after the lock duration, which bounds how far one run can read through
 // messages it skips. The hold cap bounds the memory: the SDK keeps the whole received message behind a lock, body
 // included, and offers no way to drop it. drain stops when every selected message is handled, when a receive
-// returns nothing, when a receive returns only messages it has seen before, or when the hold cap is reached.
+// returns nothing, when a receive returns only messages it has seen before, when the hold cap is reached, or
+// when it has received its budget.
+//
+// A receive never asks for more than the budget still allows. The SDK keeps the unused part of a request open on
+// the link, and the broker redelivers the messages this run abandons into that open request; the ones in flight
+// when the receiver closes stay locked for the whole lock duration, so a rerun finds nothing.
 func drain(
 	ctx context.Context,
 	receiver bus.SettlingReceiver,
@@ -56,15 +56,24 @@ func drain(
 	process func(ctx context.Context, candidates []candidate, hold func(*azservicebus.ReceivedMessage)) (stop bool, err error),
 ) (result drainResult, err error) {
 	var held []*azservicebus.ReceivedMessage
-	defer func() { releaseHeld(ctx, receiver, options.Logger, options.ReleaseGrace, held) }()
+	defer func() { releaseHeld(ctx, receiver, options.Logger, held) }()
 	hold := func(message *azservicebus.ReceivedMessage) { held = append(held, message) }
 
 	seen := make(map[int64]struct{})
+	received := 0
 	for result.Handled < len(selected) {
-		batch, err := bus.ReceiveBatch(ctx, receiver, options.BatchSize)
+		count := options.BatchSize
+		if options.Budget > 0 {
+			if received >= options.Budget {
+				return result, nil
+			}
+			count = min(count, options.Budget-received)
+		}
+		batch, err := bus.ReceiveBatch(ctx, receiver, count)
 		if err != nil {
 			return result, err
 		}
+		received += len(batch)
 
 		candidates, sawNew := sortBatch(batch, selected, seen, hold)
 		if !sawNew {
@@ -115,7 +124,7 @@ func sortBatch(
 // releaseHeld abandons what a run held back. A lock that already expired makes Abandon fail, which is fine: the
 // message is available again either way, so the failures are counted and logged once. It runs on its own deadline
 // so that a cancelled run still releases.
-func releaseHeld(ctx context.Context, receiver bus.SettlingReceiver, logger *slog.Logger, grace time.Duration, held []*azservicebus.ReceivedMessage) {
+func releaseHeld(ctx context.Context, receiver bus.SettlingReceiver, logger *slog.Logger, held []*azservicebus.ReceivedMessage) {
 	releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)
 	defer cancel()
 
@@ -127,14 +136,6 @@ func releaseHeld(ctx context.Context, receiver bus.SettlingReceiver, logger *slo
 	}
 	if failed > 0 {
 		logger.WarnContext(ctx, "held messages were not abandoned and return when their locks expire", "failed", failed, "held", len(held))
-	}
-	if len(held) > failed {
-		timer := time.NewTimer(grace)
-		defer timer.Stop()
-		select {
-		case <-timer.C:
-		case <-releaseCtx.Done():
-		}
 	}
 }
 

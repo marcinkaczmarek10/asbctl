@@ -145,7 +145,6 @@ func resend(ctx context.Context, cfg resendConfig, connectionString string, stdo
 		Wave:         cfg.wave,
 		BatchSize:    min(cfg.wave, bus.ReceiveBatchSize(lockDuration, cfg.rate)),
 		MaxHeld:      cfg.maxScan,
-		ReleaseGrace: dlq.DefaultReleaseGrace,
 		StopOnBounce: cfg.stopOnBounce,
 		Watch:        cfg.watch,
 		Dedupe:       dedupe,
