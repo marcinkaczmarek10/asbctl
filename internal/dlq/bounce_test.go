@@ -71,7 +71,7 @@ func TestBounceShareAndShouldStop(t *testing.T) {
 
 func TestBounceScannerReadsForwardFromItsCursor(t *testing.T) {
 	queue := newFakeQueue(dlMessage(1, "old", "", "r"), dlMessage(2, "old2", "", "r"))
-	scanner := NewBounceScanner(queue, runStart)
+	scanner := NewBounceScanner(queue, runStart, 0)
 	scanner.Track("sent", "orig")
 
 	first, err := scanner.Scan(context.Background())
@@ -94,7 +94,7 @@ func TestBounceScannerReadsForwardFromItsCursor(t *testing.T) {
 
 func TestBounceScannerCountsAMessageOnlyOnce(t *testing.T) {
 	queue := newFakeQueue()
-	scanner := NewBounceScanner(queue, runStart)
+	scanner := NewBounceScanner(queue, runStart, 0)
 	scanner.Track("sent", "")
 	queue.add(bounceOf(10, "sent"))
 	queue.add(bounceOf(11, "sent"))
@@ -108,7 +108,7 @@ func TestBounceScannerCountsAMessageOnlyOnce(t *testing.T) {
 
 func TestBounceScannerAllowsForClockSkew(t *testing.T) {
 	queue := newFakeQueue()
-	scanner := NewBounceScanner(queue, runStart)
+	scanner := NewBounceScanner(queue, runStart, 0)
 	scanner.Track("sent", "")
 	skewed := bounceOf(10, "sent")
 	enqueued := runStart.Add(-30 * time.Second)
@@ -121,7 +121,7 @@ func TestBounceScannerAllowsForClockSkew(t *testing.T) {
 }
 
 func TestBounceScannerIgnoresEmptyIDs(t *testing.T) {
-	scanner := NewBounceScanner(newFakeQueue(), runStart)
+	scanner := NewBounceScanner(newFakeQueue(), runStart, 0)
 
 	scanner.Track("", "")
 

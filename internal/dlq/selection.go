@@ -55,6 +55,11 @@ type Selection struct {
 	Entries []Entry
 	// Peeked counts every message looked at, selected or not.
 	Peeked int
+	// Through counts the messages peeked up to and including the last selected one: as many as a drain has to
+	// receive to reach every selected message.
+	Through int
+	// NextSequence is one past the highest sequence number peeked. A message dead-lettered later gets a higher one.
+	NextSequence int64
 }
 
 // Group is one row of a plan: how many selected messages share a payload type and a reason.
@@ -126,6 +131,9 @@ func Select(
 	_, err := bus.Peek(ctx, peeker, bus.PeekOptions{Max: math.MaxInt}, func(page []*azservicebus.ReceivedMessage) error {
 		for _, message := range page {
 			selection.Peeked++
+			if message.SequenceNumber != nil {
+				selection.NextSequence = max(selection.NextSequence, *message.SequenceNumber+1)
+			}
 			entry := EntryFromMessage(message)
 			if !filter.Matches(entry) {
 				continue
@@ -134,6 +142,7 @@ func Select(
 				return err
 			}
 			selection.Entries = append(selection.Entries, entry)
+			selection.Through = selection.Peeked
 			if maxSelected > 0 && len(selection.Entries) >= maxSelected {
 				return errSelectionFull
 			}

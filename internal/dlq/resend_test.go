@@ -497,3 +497,15 @@ func TestResendEndsAWaveAsSoonAsItIsFull(t *testing.T) {
 		t.Errorf("summary = %+v, want the run stopped after the first full wave of 2", summary)
 	}
 }
+
+func TestResendStartsTheBounceScanAfterWhatTheSelectionRead(t *testing.T) {
+	queue := noiseQueue(5, "wanted")
+	f := newResendFixture(t, queue, Filter{PayloadTypeID: "Order"})
+	queue.peekFroms = nil
+
+	f.run(t)
+
+	if len(queue.peekFroms) == 0 || queue.peekFroms[0] != 7 {
+		t.Errorf("bounce scan peeked from %v, want it to start at 7, past the 6 messages the selection read", queue.peekFroms)
+	}
+}

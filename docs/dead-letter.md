@@ -35,7 +35,7 @@ A message that is not acted on stays locked until the run ends, and only then is
 
 A message that cannot be abandoned when the run ends comes back when its lock expires. The run counts those and logs one warning with the count.
 
-A run stops when every selected message is handled, when a receive returns nothing, or when a receive returns only messages it has seen before. A receive batch holds at most what can be sent in half the lock duration at `--rate`, so no message loses its lock while it waits. When the lock duration cannot be read, 30 seconds is assumed.
+A run stops when every selected message is handled, when a receive returns nothing, when a receive returns only messages it has seen before, or when it has received as many messages as the selection's peek counted up to the last selected one. No receive asks for more than that count still allows. The Azure SDK keeps the unused part of a receive request open on the link, and the broker redelivers the messages a run abandons into that open request; the ones in flight when the run ends stay locked for the lock duration, and a run started in that window finds nothing to receive. If messages in the selected range disappear between the selection and the receive, for example because another consumer took them, part of a request can stay open and the held messages can stay locked until their lock expires. A receive batch holds at most what can be sent in half the lock duration at `--rate`, so no message loses its lock while it waits. When the lock duration cannot be read, 30 seconds is assumed.
 
 ## Resend
 

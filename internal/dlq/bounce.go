@@ -26,11 +26,14 @@ type BounceScanner struct {
 	bounced map[string]struct{}
 }
 
-// NewBounceScanner returns a scanner that ignores messages enqueued before since, less the clock skew allowance.
-func NewBounceScanner(peeker bus.Peeker, since time.Time) *BounceScanner {
+// NewBounceScanner returns a scanner that ignores messages enqueued before since, less the clock skew allowance, and
+// starts reading at sequence number from: a bounce is dead-lettered after the selection read the queue, so it
+// gets a higher sequence number than anything the selection saw.
+func NewBounceScanner(peeker bus.Peeker, since time.Time, from int64) *BounceScanner {
 	return &BounceScanner{
 		peeker:  peeker,
 		since:   since.Add(-bounceClockSkew),
+		cursor:  from,
 		resent:  make(map[string]struct{}),
 		bounced: make(map[string]struct{}),
 	}

@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 )
@@ -74,7 +73,7 @@ func TestReleaseHeldCountsAbandonFailuresAndLogsThemOnce(t *testing.T) {
 	queue.abandonErr[1], queue.abandonErr[3] = errBoom, errBoom
 	var logs bytes.Buffer
 
-	releaseHeld(context.Background(), queue, slog.New(slog.NewTextHandler(&logs, nil)), 0, queue.messages)
+	releaseHeld(context.Background(), queue, slog.New(slog.NewTextHandler(&logs, nil)), queue.messages)
 
 	if got := strings.Count(logs.String(), "level=WARN"); got != 1 {
 		t.Fatalf("warnings = %d in %q, want exactly one", got, logs.String())
@@ -93,7 +92,7 @@ func TestReleaseHeldLogsNothingWhenEveryAbandonSucceeds(t *testing.T) {
 	queue := newFakeQueue(dlMessage(1, "a", "", "r"))
 	var logs bytes.Buffer
 
-	releaseHeld(context.Background(), queue, slog.New(slog.NewTextHandler(&logs, nil)), 0, queue.messages)
+	releaseHeld(context.Background(), queue, slog.New(slog.NewTextHandler(&logs, nil)), queue.messages)
 
 	if logs.Len() != 0 {
 		t.Errorf("log = %q, want nothing", logs.String())
@@ -142,30 +141,48 @@ func TestDrainDoesNotCallProcessForABatchWithNothingSelected(t *testing.T) {
 	}
 }
 
-func TestReleaseHeldWaitsTheGraceAfterAbandoning(t *testing.T) {
-	queue := newFakeQueue(dlMessage(1, "a", "", "r"))
-	grace := 50 * time.Millisecond
+func TestPurgeLeavesNoHeldMessageLockedAfterTheRun(t *testing.T) {
+	queue := newFakeQueue(dlMessage(1, "a", "Noise", "r"), dlMessage(2, "b", "Noise", "r"), dlMessage(3, "c", "Order", "r"))
+	selection := selectionOf(t, queue, Filter{PayloadTypeID: "Order"})
 
-	start := time.Now()
-	releaseHeld(context.Background(), queue, discardLogger, grace, queue.messages)
+	summary, err := Purge(context.Background(), queue, selection, "snap", PurgeOptions{Logger: discardLogger}, func(Result) error { return nil })
 
-	if elapsed := time.Since(start); elapsed < grace {
-		t.Errorf("releaseHeld returned after %s, want at least the %s grace so the receiver does not close on the abandon", elapsed, grace)
+	if err != nil || summary.Purged != 1 {
+		t.Fatalf("Purge() = %+v, %v, want the one selected message purged", summary, err)
+	}
+	if len(queue.stuck) != 0 {
+		t.Errorf("stuck = %v, want none: a held message abandoned into open link credit stays locked for the lock duration", queue.stuck)
+	}
+	if !reflect.DeepEqual(queue.abandoned, []int64{1, 2}) {
+		t.Errorf("abandoned = %v, want the two held messages released", queue.abandoned)
 	}
 }
 
-func TestReleaseHeldSkipsTheGraceWhenNothingWasAbandoned(t *testing.T) {
-	queue := newFakeQueue(dlMessage(1, "a", "", "r"))
-	queue.abandonErr[1] = errBoom
+func TestDrainAsksForNoMoreThanTheSelectionReaches(t *testing.T) {
+	queue := noiseQueue(250, "wanted")
+	queue.add(dlMessage(252, "after", "Noise", "r"))
+	selection := selectionOf(t, queue, Filter{PayloadTypeID: "Order"})
 
-	for name, held := range map[string][]*azservicebus.ReceivedMessage{"nothing held": nil, "every abandon failed": queue.messages} {
-		t.Run(name, func(t *testing.T) {
-			start := time.Now()
-			releaseHeld(context.Background(), queue, discardLogger, time.Second, held)
+	_, err := drain(context.Background(), queue, drainOptions{BatchSize: 100, Budget: selection.Through, Logger: discardLogger}, selection.Sequences(), discardProcess)
 
-			if elapsed := time.Since(start); elapsed >= time.Second {
-				t.Errorf("releaseHeld waited %s, want no grace when no abandon went through", elapsed)
-			}
-		})
+	if err != nil {
+		t.Fatalf("drain() error = %v", err)
+	}
+	if !reflect.DeepEqual(queue.requests, []int{100, 100, 51}) {
+		t.Errorf("requests = %v, want [100 100 51]: the selected message is the 251st", queue.requests)
+	}
+}
+
+func TestDrainStopsAtTheBudgetWithoutAnotherReceive(t *testing.T) {
+	queue := newFakeQueue(dlMessage(1, "a", "Noise", "r"), dlMessage(2, "b", "Order", "r"), dlMessage(3, "c", "Noise", "r"))
+	selected := map[int64]Entry{9: {SequenceNumber: 9, MessageID: "gone"}}
+
+	result, err := drain(context.Background(), queue, drainOptions{BatchSize: 100, Budget: 2, Logger: discardLogger}, selected, discardProcess)
+
+	if err != nil || result.Handled != 0 {
+		t.Fatalf("drain() = %+v, %v, want nothing handled", result, err)
+	}
+	if !reflect.DeepEqual(queue.requests, []int{2}) {
+		t.Errorf("requests = %v, want one request for the budget of 2 and no receive after it", queue.requests)
 	}
 }
