@@ -52,7 +52,7 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-The helpers are `peek`, `export`, `export_to_file`, `dlq_summary`, `send_plan`, `send`, `dlq_resend_plan`, `dlq_resend`, `dlq_purge_plan` and `dlq_purge`. Helpers that return many results are async iterators, and the others are awaited. `send` takes `Message` objects or dicts in the export format and yields one `SendResult` per message. Failures raise `AsbctlError` with the `code`, `message` and `exit_code` that `asbctl` reported, and a missing binary raises `BinaryNotFoundError`.
+The helpers are `peek`, `export`, `export_to_file`, `dlq_summary`, `send_plan`, `send`, `dlq_resend_plan`, `dlq_resend`, `dlq_purge_plan` and `dlq_purge`. Helpers that return many results are async iterators, and the others are awaited. `send` takes `Message` objects or dicts in the export format and yields one `SendResult` per message. Failures raise `AsbctlError` with the `code`, `message` and `exit_code` that `asbctl` reported. A missing binary raises `BinaryNotFoundError`, a subclass of `AsbctlError`. The adapter sets its code to `binary_not_found` and its exit code to 127, because no `asbctl` process ran to report them.
 
 ## Development
 
