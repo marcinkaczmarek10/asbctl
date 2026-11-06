@@ -1,6 +1,6 @@
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
@@ -178,7 +178,7 @@ def test_record_from_message_writes_every_field_under_its_record_name():
         "body_text": "text-5",
         "sequence_number": 5,
         "message_id": "id-5",
-        "enqueued_at": "2026-11-05T10:00:00+00:00",
+        "enqueued_at": "2026-11-05T10:00:00Z",
         "content_type": "text/plain",
         "correlation_id": "corr-5",
         "subject": "subject-5",
@@ -207,6 +207,21 @@ def test_record_from_message_keeps_an_empty_body_text_and_a_zero_count():
 
     # Then
     assert record == {"schema": 1, "body": "", "body_text": "", "delivery_count": 0}
+
+
+def test_record_from_message_writes_a_time_that_is_not_utc_as_the_same_instant_in_utc():
+    # Given
+    message = Message(
+        schema=1,
+        body=b"",
+        enqueued_at=datetime(2026, 11, 5, 12, 0, tzinfo=timezone(timedelta(hours=2))),
+    )
+
+    # When
+    record = record_from_message(message)
+
+    # Then
+    assert record["enqueued_at"] == "2026-11-05T10:00:00Z"
 
 
 def test_message_survives_a_round_trip_through_a_record(read_contract: Callable[[str], str]):
