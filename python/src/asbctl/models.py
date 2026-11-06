@@ -136,7 +136,8 @@ def message_from_record(record: Mapping[str, Any]) -> Message:
     """Build a Message from one record. The body is decoded from base64 and must be valid.
 
     Raises:
-        ValueError: The body is not valid base64.
+        ValueError: The body is not valid base64, or a typed application property lacks type or
+            value.
     """
     properties = record.get("application_properties", {})
     return Message(
@@ -160,7 +161,7 @@ def message_from_record(record: Mapping[str, Any]) -> Message:
         dead_letter_error_description=record.get("dead_letter_error_description"),
         dead_letter_source=record.get("dead_letter_source"),
         application_properties=MappingProxyType(
-            {name: _property_from(value) for name, value in properties.items()}
+            {name: _property_from(name, value) for name, value in properties.items()}
         ),
     )
 
@@ -278,8 +279,11 @@ def _group_from_record(record: Mapping[str, Any]) -> Group:
     )
 
 
-def _property_from(value: Any) -> PropertyValue:
+def _property_from(name: str, value: Any) -> PropertyValue:
     if isinstance(value, dict):
+        missing = [key for key in TypedValue._fields if key not in value]
+        if missing:
+            raise ValueError(f'application property "{name}" is missing {", ".join(missing)}')
         return TypedValue(type=value["type"], value=value["value"])
     return value
 
