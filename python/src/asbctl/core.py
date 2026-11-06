@@ -142,12 +142,10 @@ async def run_once(
     Raises:
         ValueError: The command printed no object, or more than one.
     """
-    objects = [
-        output
-        async for output in run(
-            command, *subcommands, timeout_seconds=timeout_seconds, stdin_lines=stdin_lines, **flags
-        )
-    ]
+    async with contextlib.aclosing(
+        run(command, *subcommands, timeout_seconds=timeout_seconds, stdin_lines=stdin_lines, **flags)
+    ) as stream:
+        objects = [output async for output in stream]
     if len(objects) != 1:
         raise ValueError(f"expected one JSON object, got {len(objects)}")
     return objects[0]
@@ -218,8 +216,8 @@ async def _start_process(
             stderr=asyncio.subprocess.PIPE,
             limit=line_limit_bytes,
         )
-    except FileNotFoundError as error:
-        raise BinaryNotFoundError(f"no asbctl binary at {binary_path}") from error
+    except (FileNotFoundError, PermissionError, IsADirectoryError) as error:
+        raise BinaryNotFoundError(f"no asbctl binary at {binary_path}: {error}") from error
 
 
 async def _stop_process(process: asyncio.subprocess.Process) -> None:
