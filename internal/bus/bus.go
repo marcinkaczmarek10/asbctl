@@ -59,6 +59,7 @@ func NewClient(namespace, connectionString string) (*Client, error) {
 		}
 		adminClient, err := admin.NewClientFromConnectionString(connectionString, nil)
 		if err != nil {
+			_ = client.Close(context.Background())
 			return nil, fmt.Errorf("create admin client from connection string: %w", err)
 		}
 		return &Client{client: client, admin: adminClient}, nil
@@ -75,6 +76,7 @@ func NewClient(namespace, connectionString string) (*Client, error) {
 	}
 	adminClient, err := admin.NewClient(fullyQualifiedNamespace, credential, nil)
 	if err != nil {
+		_ = client.Close(context.Background())
 		return nil, fmt.Errorf("create admin client: %w", err)
 	}
 	return &Client{client: client, admin: adminClient}, nil
