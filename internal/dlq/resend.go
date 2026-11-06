@@ -41,6 +41,7 @@ type ResendParams struct {
 	Wave         int
 	BatchSize    int
 	MaxHeld      int
+	ReleaseGrace time.Duration
 	StopOnBounce float64
 	Watch        time.Duration
 	Dedupe       bus.DuplicateDetection
@@ -73,8 +74,8 @@ func Resend(ctx context.Context, deps ResendDeps, params ResendParams, onResult 
 		summary:      newResendSummary(params.Snapshot),
 	}
 
-	selected := params.Selection.MessageIDs()
-	drained, err := drain(ctx, deps.Receiver, drainOptions{BatchSize: params.BatchSize, MaxHeld: params.MaxHeld, Logger: deps.Logger}, selected, run.processBatch)
+	selected := params.Selection.Sequences()
+	drained, err := drain(ctx, deps.Receiver, drainOptions{BatchSize: params.BatchSize, MaxHeld: params.MaxHeld, ReleaseGrace: params.ReleaseGrace, Logger: deps.Logger}, selected, run.processBatch)
 	if err == nil && run.waveSent > 0 && !run.summary.StoppedOnBounce {
 		err = run.endWave(ctx)
 	}
@@ -82,7 +83,7 @@ func Resend(ctx context.Context, deps ResendDeps, params ResendParams, onResult 
 		err = run.watch(ctx)
 	}
 
-	run.summary.NotReached = len(params.Selection.Entries) - drained.Handled
+	run.summary.NotReached = len(selected) - drained.Handled
 	run.summary.ScanLimitReached = drained.ScanLimited
 	return run.summary, err
 }

@@ -3,15 +3,18 @@ package dlq
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/messaging/azservicebus"
 	"github.com/marcinkaczmarek10/asbctl/internal/bus"
 )
 
-// PurgeOptions tune a purge. MaxHeld is the hold cap of drain, and zero means no cap.
+// PurgeOptions tune a purge. MaxHeld is the hold cap of drain, and zero means no cap. ReleaseGrace is the wait
+// after releasing held messages.
 type PurgeOptions struct {
-	MaxHeld int
-	Logger  *slog.Logger
+	MaxHeld      int
+	ReleaseGrace time.Duration
+	Logger       *slog.Logger
 }
 
 // Purge completes each selected message under peek-lock, which removes it from the dead-letter queue. It never
@@ -25,9 +28,9 @@ func Purge(
 	onResult func(Result) error,
 ) (PurgeSummary, error) {
 	summary := newPurgeSummary(snapshot)
-	selected := selection.MessageIDs()
+	selected := selection.Sequences()
 
-	drained, err := drain(ctx, receiver, drainOptions{BatchSize: bus.MaxBatchSize, MaxHeld: options.MaxHeld, Logger: options.Logger}, selected,
+	drained, err := drain(ctx, receiver, drainOptions{BatchSize: bus.MaxBatchSize, MaxHeld: options.MaxHeld, ReleaseGrace: options.ReleaseGrace, Logger: options.Logger}, selected,
 		func(ctx context.Context, candidates []candidate, hold func(*azservicebus.ReceivedMessage)) (bool, error) {
 			for _, c := range candidates {
 				result := Result{SequenceNumber: c.Entry.SequenceNumber, MessageID: c.Entry.MessageID, Status: StatusPurged}
@@ -45,7 +48,7 @@ func Purge(
 			return false, nil
 		})
 
-	summary.NotReached = len(selection.Entries) - drained.Handled
+	summary.NotReached = len(selected) - drained.Handled
 	summary.ScanLimitReached = drained.ScanLimited
 	return summary, err
 }
