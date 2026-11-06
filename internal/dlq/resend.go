@@ -68,7 +68,7 @@ func Resend(ctx context.Context, deps ResendDeps, params ResendParams, onResult 
 		deps:         deps,
 		params:       params,
 		duplicateIDs: params.Selection.DuplicateIDs(),
-		scanner:      NewBounceScanner(deps.Peeker, deps.Now()),
+		scanner:      NewBounceScanner(deps.Peeker, deps.Now(), params.Selection.NextSequence),
 		onResult:     onResult,
 		summary:      newResendSummary(params.Snapshot),
 	}
