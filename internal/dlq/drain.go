@@ -57,13 +57,14 @@ func drain(
 		total += len(entries)
 	}
 	matched := make(map[string]int)
+	seen := make(map[string]int)
 	for result.Handled < total {
 		batch, err := bus.ReceiveBatch(ctx, receiver, options.BatchSize)
 		if err != nil {
 			return result, err
 		}
 
-		candidates, sawNew := sortBatch(batch, selected, matched, hold)
+		candidates, sawNew := sortBatch(batch, selected, matched, seen, hold)
 		if !sawNew {
 			return result, nil
 		}
@@ -75,7 +76,7 @@ func drain(
 				return result, err
 			}
 		}
-		if options.MaxHeld > 0 && len(held) >= options.MaxHeld && result.Handled < len(selected) {
+		if options.MaxHeld > 0 && len(held) >= options.MaxHeld && result.Handled < total {
 			result.ScanLimited = true
 			return result, nil
 		}
@@ -85,18 +86,30 @@ func drain(
 
 // sortBatch splits a received batch into the selected messages, which it returns, and the rest, which it holds.
 // Matching is by MessageId because PeekMessages and ReceiveMessages return different sequence numbers on a
-// dead-letter sub-queue. sawNew is true when any message was new.
+// dead-letter sub-queue. sawNew is true when any message in the batch had not been seen in an earlier batch.
 func sortBatch(
 	batch []*azservicebus.ReceivedMessage,
 	selected map[string][]Entry,
 	matched map[string]int,
+	seen map[string]int,
 	hold func(*azservicebus.ReceivedMessage),
 ) (candidates []candidate, sawNew bool) {
 	for _, message := range batch {
 		entry := EntryFromMessage(message)
-		sawNew = true
 
+		// Track whether this batch brought anything new: a MessageId we have not seen
+		// this many times before. Without this, expired locks cause re-receives that
+		// the drain mistakes for new messages, spinning forever when maxHeld is 0.
+		seen[entry.MessageID]++
 		entries, wanted := selected[entry.MessageID]
+		totalForID := len(entries)
+		if !wanted {
+			totalForID = 1 // unselected messages: first occurrence is new
+		}
+		if seen[entry.MessageID] <= totalForID {
+			sawNew = true
+		}
+
 		if !wanted || matched[entry.MessageID] >= len(entries) {
 			hold(message)
 			continue
