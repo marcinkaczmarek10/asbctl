@@ -135,7 +135,7 @@ func resend(ctx context.Context, cfg resendConfig, connectionString string, stdo
 		return 0, err
 	}
 
-	ledgerPath := dlq.DefaultLedgerPath(os.Getenv, homeDir())
+	ledgerDir := dlq.DefaultLedgerDir(os.Getenv, homeDir())
 	namespace := namespaceKey(cfg.namespace, connectionString)
 	params := dlq.ResendParams{
 		Selection:    selection,
@@ -153,7 +153,7 @@ func resend(ctx context.Context, cfg resendConfig, connectionString string, stdo
 		params.NewMessageID = bus.NewMessageID
 	}
 	if dedupe.Enabled && !cfg.newMessageID {
-		params.Recent, err = dlq.RecentFromFile(ledgerPath, namespace, params.Target, dedupe.Window, now)
+		params.Recent, err = dlq.RecentFromDir(ledgerDir, namespace, params.Target, dedupe.Window, now)
 		if err != nil {
 			return 0, err
 		}
@@ -167,7 +167,7 @@ func resend(ctx context.Context, cfg resendConfig, connectionString string, stdo
 	}
 	logger.InfoContext(ctx, "snapshot written", "file", cfg.snapshot, "messages", len(selection.Entries))
 
-	return sendSelection(ctx, cfg, client, receiver, params, ledgerPath, stdout, stderr, logger)
+	return sendSelection(ctx, cfg, client, receiver, params, ledgerDir, stdout, stderr, logger)
 }
 
 func sendSelection(
@@ -176,7 +176,7 @@ func sendSelection(
 	client *bus.Client,
 	receiver *azservicebus.Receiver,
 	params dlq.ResendParams,
-	ledgerPath string,
+	ledgerDir string,
 	stdout, stderr io.Writer,
 	logger *slog.Logger,
 ) (int, error) {
@@ -187,7 +187,7 @@ func sendSelection(
 	}
 	defer closeAfter(ctx, logger, "close sender", sender.Close)
 
-	ledger, err := dlq.OpenLedger(ledgerPath)
+	ledger, err := dlq.OpenLedger(ledgerDir, time.Now())
 	if err != nil {
 		return 0, err
 	}
