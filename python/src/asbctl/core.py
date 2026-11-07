@@ -116,6 +116,7 @@ async def run(
         AsbctlError: asbctl exited with a non-zero code.
         BinaryNotFoundError: The asbctl binary cannot be found.
         TimeoutError: The run took longer than timeout_seconds.
+        Exception: An exception that the stdin_lines iterable raises propagates as itself.
     """
     arguments = build_arguments(command, subcommands, flags)
     binary_path = get_binary_path(
@@ -141,6 +142,7 @@ async def run_once(
 
     Raises:
         ValueError: The command printed no object, or more than one.
+        Exception: An exception that the stdin_lines iterable raises propagates as itself.
     """
     async with contextlib.aclosing(
         run(
@@ -197,6 +199,12 @@ async def _stream_lines(
                         return
                 if not is_line_too_long:
                     exit_code = await process.wait()
+        except BaseExceptionGroup as group:
+            # A TaskGroup wraps the error of a failed stdin writer, so callers get the original.
+            if len(group.exceptions) != 1:
+                raise
+            error = group.exceptions[0]
+            raise error from error.__cause__
         finally:
             await _stop_process(process)
 
