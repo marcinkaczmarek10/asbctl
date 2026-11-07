@@ -64,7 +64,9 @@ When the target has duplicate detection, a send that repeats a `MessageId` insid
 - occurs twice in the selection, in which case both are refused, or
 - was resent to the same namespace and target inside the window, according to the resend ledger.
 
-A refused message is reported as `skipped_duplicate_window`. The ledger is an append-only NDJSON file at `$XDG_STATE_HOME/asbctl/resend-ledger.ndjson`, or `~/.local/state/asbctl/resend-ledger.ndjson`. Each line holds `namespace`, `target`, `message_id` and `sent_at`, and is written after each successful send. It is local to the machine, so a resend from another machine is not seen.
+A refused message is reported as `skipped_duplicate_window`. The ledger is a set of append-only NDJSON files, one per UTC day of the send, named `resend-ledger-YYYY-MM-DD.ndjson`. They are in `$XDG_STATE_HOME/asbctl`, or `~/.local/state/asbctl`. Each line holds `namespace`, `target`, `message_id` and `sent_at`, and is written after each successful send. It is local to the machine, so a resend from another machine is not seen.
+
+A run reads only the day files dated from the day of the window start on, plus the `resend-ledger.ndjson` that earlier versions wrote as one file. A file dated in the future still counts, because a send dated in the future counts as recent. On each resend that sends, files dated before the day of now minus 8 days are deleted, as is the single file when it was last written more than 8 days ago. The longest duplicate detection window in Service Bus is 7 days. The deletion is best effort: a file that cannot be deleted stays, and no file is ever rewritten.
 
 Reading the duplicate detection settings of the target needs Manage rights. When they cannot be read, duplicate detection is assumed on with a window of 10 minutes, and the plan says so.
 
