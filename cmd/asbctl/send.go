@@ -53,6 +53,14 @@ func (c sendConfig) target() export.SendTarget {
 	return export.SendTarget{Queue: c.queue, Topic: c.topic}
 }
 
+// entityName is the queue name, or the topic name when no queue is set.
+func (c sendConfig) entityName() string {
+	if c.queue != "" {
+		return c.queue
+	}
+	return c.topic
+}
+
 func (c sendConfig) readsStdin() bool {
 	return c.file == "" || c.file == "-"
 }
@@ -138,7 +146,7 @@ func sendFile(ctx context.Context, cfg sendConfig, connectionString, path string
 	}
 	defer closeAfter(ctx, logger, "close client", client.Close)
 
-	sender, err := client.NewSender(cfg.queue + cfg.topic)
+	sender, err := client.NewSender(cfg.entityName())
 	if err != nil {
 		return bus.SendCounts{}, fmt.Errorf("create sender: %w", err)
 	}
