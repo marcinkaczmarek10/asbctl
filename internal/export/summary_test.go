@@ -3,6 +3,7 @@ package export
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -74,6 +75,24 @@ func TestSummarySortsByCountThenPayloadTypeThenReason(t *testing.T) {
 	}
 }
 
+func distinctDescriptions(prefix string, n int) []string {
+	descriptions := make([]string, n)
+	for i := range descriptions {
+		descriptions[i] = fmt.Sprintf("%s %04d", prefix, i)
+	}
+	return descriptions
+}
+
+// noiseWithFrequent returns total distinct descriptions with "frequent" in place of every period-th one,
+// so it arrives interleaved with the noise and never first.
+func noiseWithFrequent(total, period int) []string {
+	descriptions := distinctDescriptions("noise", total)
+	for i := period / 2; i < total; i += period {
+		descriptions[i] = "frequent"
+	}
+	return descriptions
+}
+
 func TestSummaryTopDescription(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -84,6 +103,9 @@ func TestSummaryTopDescription(t *testing.T) {
 		{name: "a tie goes to the smaller text", descriptions: []string{"b", "a", "b", "a"}, want: "a"},
 		{name: "empty descriptions are ignored", descriptions: []string{"", "", "x"}, want: "x"},
 		{name: "only empty descriptions leave none", descriptions: []string{"", ""}, want: ""},
+		{name: "past the cap all distinct descriptions still leave an approximate winner", descriptions: distinctDescriptions("failed at", 500), want: "failed at 0400"},
+		{name: "past the cap the newest description takes over the lowest counter and is the approximate winner", descriptions: distinctDescriptions("once", 101), want: "once 0100"},
+		{name: "a description just above 1% of the group wins among noise", descriptions: noiseWithFrequent(2000, 90), want: "frequent"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
