@@ -2,7 +2,7 @@
 
 import base64
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import Any, NamedTuple
 
@@ -174,7 +174,9 @@ def record_from_message(message: Message) -> dict[str, Any]:
     optional_values = {
         "sequence_number": message.sequence_number,
         "message_id": message.message_id,
-        "enqueued_at": None if message.enqueued_at is None else message.enqueued_at.isoformat(),
+        "enqueued_at": None
+        if message.enqueued_at is None
+        else _text_from_time(message.enqueued_at),
         "content_type": message.content_type,
         "correlation_id": message.correlation_id,
         "subject": message.subject,
@@ -292,3 +294,7 @@ def _json_from_property(value: PropertyValue) -> Any:
 
 def _time_from(value: str | None) -> datetime | None:
     return None if value is None else datetime.fromisoformat(value)
+
+
+def _text_from_time(value: datetime) -> str:
+    return value.astimezone(UTC).isoformat().removesuffix("+00:00") + "Z"
