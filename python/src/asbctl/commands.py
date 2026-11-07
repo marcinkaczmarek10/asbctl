@@ -39,6 +39,10 @@ async def peek(
     """Peek messages from a queue or a subscription, optionally its dead-letter queue.
 
     Messages are never locked or removed. Leave namespace out when ASBCTL_CONNECTION_STRING is set.
+
+    Raises:
+        ValueError: A record is malformed: its body is not valid base64, or a typed application
+            property lacks type or value.
     """
     async with contextlib.aclosing(
         run(
@@ -95,6 +99,10 @@ async def export(
     """Export the messages of a queue or a subscription, optionally its dead-letter queue.
 
     It is peek with a default of 10000 messages. To write the records to a file, use export_to_file.
+
+    Raises:
+        ValueError: A record is malformed: its body is not valid base64, or a typed application
+            property lacks type or value.
     """
     async with contextlib.aclosing(
         run(

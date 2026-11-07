@@ -109,6 +109,27 @@ def test_message_from_record_rejects_a_body_that_is_not_valid_base64(body: str):
     # Then
 
 
+@pytest.mark.parametrize(
+    ("typed_property", "missing"),
+    [
+        ({"value": "2026-11-05T09:00:00Z"}, "type"),
+        ({"type": "timestamp"}, "value"),
+        ({}, "type, value"),
+    ],
+)
+def test_message_from_record_names_the_keys_missing_from_a_typed_property(
+    typed_property: dict[str, str], missing: str
+):
+    # Given
+    record = {"schema": 1, "application_properties": {"when": typed_property}}
+
+    # When
+    with pytest.raises(ValueError, match=f'^application property "when" is missing {missing}$'):
+        message_from_record(record)
+
+    # Then
+
+
 def test_message_payload_type_id_ignores_a_property_that_is_not_a_string():
     # Given
     message = Message(schema=1, body=b"", application_properties={"PayloadTypeId": 5})
