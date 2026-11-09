@@ -435,6 +435,24 @@ async def test_run_reports_the_exit_code_when_the_binary_stops_reading_stdin(
     assert raised.value.exit_code == 1
 
 
+async def test_run_raises_the_error_of_a_failing_stdin_iterable_unwrapped(
+    fake_asbctl: FakeFactory,
+):
+    # Given
+    fake_asbctl(is_stdin_read=True)
+
+    def lines():
+        yield "first"
+        raise KeyError("no such line")
+
+    # When
+    with pytest.raises(KeyError) as raised:
+        [output async for output in run("send", stdin_lines=lines())]
+
+    # Then
+    assert raised.value.args == ("no such line",)
+
+
 async def test_run_once_returns_the_single_object(fake_asbctl: FakeFactory):
     # Given
     fake_asbctl(stdout='{"total": 61}\n')
