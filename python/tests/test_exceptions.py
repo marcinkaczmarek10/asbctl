@@ -13,7 +13,7 @@ def test_asbctl_error_carries_the_code_message_and_exit_code():
     assert str(error) == "partial: 2 of 9 were not sent (exit 3)"
 
 
-def test_binary_not_found_error_is_an_exception_of_its_own():
+def test_binary_not_found_error_is_an_asbctl_error_with_the_shell_exit_code():
     # Given
     message = "set ASBCTL_BIN"
 
@@ -21,5 +21,5 @@ def test_binary_not_found_error_is_an_exception_of_its_own():
     error = BinaryNotFoundError(message)
 
     # Then
-    assert not isinstance(error, AsbctlError)
-    assert str(error) == message
+    assert isinstance(error, AsbctlError)
+    assert (error.code, error.message, error.exit_code) == ("binary_not_found", message, 127)
