@@ -18,6 +18,7 @@ import (
 const (
 	descriptionColumnRunes = 120
 	noneLabel              = "(none)"
+	maxDescriptionCounters = 100
 )
 
 // Group is one (payload type, reason) row of the dead-letter summary.
@@ -51,7 +52,7 @@ type groupStats struct {
 	firstAt      time.Time
 	lastAt       time.Time
 	maxDelivery  uint32
-	descriptions map[string]int
+	descriptions descriptionCounter
 	sampleID     string
 }
 
@@ -79,14 +80,14 @@ func (a *Aggregator) addRecord(rec record) {
 	key := groupKey{payloadTypeID: rec.payloadTypeID(), reason: rec.DeadLetterReason}
 	stats, ok := a.groups[key]
 	if !ok {
-		stats = &groupStats{descriptions: make(map[string]int), sampleID: rec.MessageID}
+		stats = &groupStats{descriptions: newDescriptionCounter(), sampleID: rec.MessageID}
 		a.groups[key] = stats
 	}
 
 	stats.count++
 	stats.maxDelivery = max(stats.maxDelivery, rec.DeliveryCount)
 	if rec.DeadLetterErrorDescription != "" {
-		stats.descriptions[rec.DeadLetterErrorDescription]++
+		stats.descriptions.add(rec.DeadLetterErrorDescription)
 	}
 	if enqueuedAt, err := time.Parse(time.RFC3339Nano, rec.EnqueuedAt); err == nil {
 		if stats.firstAt.IsZero() || enqueuedAt.Before(stats.firstAt) {
@@ -109,7 +110,7 @@ func (a *Aggregator) Summary(entity bus.EntityFacts, maxMessages int) Summary {
 			FirstEnqueuedAt:     formatTime(stats.firstAt),
 			LastEnqueuedAt:      formatTime(stats.lastAt),
 			MaxDeliveryCount:    stats.maxDelivery,
-			TopErrorDescription: topDescription(stats.descriptions),
+			TopErrorDescription: stats.descriptions.top(),
 			SampleMessageID:     stats.sampleID,
 		})
 	}
@@ -141,12 +142,37 @@ func compareGroups(a, b Group) int {
 	)
 }
 
-// topDescription returns the most frequent description, the smallest one on a tie.
-func topDescription(counts map[string]int) string {
+// descriptionCounter is a Space-Saving tracker of at most maxDescriptionCounters descriptions. Counts are
+// exact while the distinct descriptions fit, and the tracker is never empty once one was added.
+type descriptionCounter struct {
+	counts map[string]int
+}
+
+func newDescriptionCounter() descriptionCounter {
+	return descriptionCounter{counts: make(map[string]int, maxDescriptionCounters)}
+}
+
+func (c *descriptionCounter) add(description string) {
+	if _, tracked := c.counts[description]; tracked || len(c.counts) < maxDescriptionCounters {
+		c.counts[description]++
+		return
+	}
+	evicted, evictedCount := "", -1
+	for candidate, count := range c.counts {
+		if evictedCount < 0 || count < evictedCount || count == evictedCount && candidate < evicted {
+			evicted, evictedCount = candidate, count
+		}
+	}
+	delete(c.counts, evicted)
+	c.counts[description] = evictedCount + 1
+}
+
+// top returns the tracked description with the highest count, the smallest one on a tie.
+func (c *descriptionCounter) top() string {
 	top, topCount := "", 0
-	for _, description := range slices.Sorted(maps.Keys(counts)) {
-		if counts[description] > topCount {
-			top, topCount = description, counts[description]
+	for _, description := range slices.Sorted(maps.Keys(c.counts)) {
+		if c.counts[description] > topCount {
+			top, topCount = description, c.counts[description]
 		}
 	}
 	return top
