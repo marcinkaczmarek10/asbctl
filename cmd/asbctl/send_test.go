@@ -86,6 +86,24 @@ func TestParseSendArgsHelp(t *testing.T) {
 	}
 }
 
+func TestSendConfigEntityName(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  sendConfig
+		want string
+	}{
+		{name: "queue", cfg: sendConfig{queue: "orders"}, want: "orders"},
+		{name: "topic", cfg: sendConfig{topic: "events"}, want: "events"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.cfg.entityName(); got != tc.want {
+				t.Errorf("entityName() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSendExitCode(t *testing.T) {
 	tests := []struct{ sent, total, want int }{
 		{10, 10, 0},
