@@ -315,7 +315,7 @@ async def test_send_writes_the_records_to_stdin_and_yields_the_results(
         "schema": 1,
         "body": "/wA=",
         "message_id": "m-1",
-        "enqueued_at": "2026-11-05T10:00:00+00:00",
+        "enqueued_at": "2026-11-05T10:00:00Z",
         "application_properties": {
             "PayloadTypeId": "T",
             "t": {"type": "timestamp", "value": "2026-11-05T09:59:00Z"},
