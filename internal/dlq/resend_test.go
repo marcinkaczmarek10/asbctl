@@ -60,7 +60,7 @@ func TestResendRecordsEachSendInTheLedger(t *testing.T) {
 
 	f.run(t)
 
-	got, err := RecentFromFile(f.path, "ns.servicebus.windows.net", "queue:orders", time.Hour, runStart)
+	got, err := RecentFromDir(f.dir, "ns.servicebus.windows.net", "queue:orders", time.Hour, runStart)
 	if err != nil || !reflect.DeepEqual(got, map[string]struct{}{"a": {}, "b": {}}) {
 		t.Errorf("ledger = %v, %v, want a and b", got, err)
 	}
@@ -107,7 +107,7 @@ func TestResendAbandonsAFailedSendAtTheEndAndReportsIt(t *testing.T) {
 	if f.got[0].Status != StatusFailed || !errors.Is(f.got[0].Err, errBoom) {
 		t.Errorf("first result = %+v, want failed with the send error", f.got[0])
 	}
-	recent, _ := RecentFromFile(f.path, "ns.servicebus.windows.net", "queue:orders", time.Hour, runStart)
+	recent, _ := RecentFromDir(f.dir, "ns.servicebus.windows.net", "queue:orders", time.Hour, runStart)
 	if _, wrote := recent["a"]; wrote {
 		t.Error("a failed send was written to the ledger")
 	}
@@ -129,7 +129,7 @@ func TestResendNeverHidesAFailedComplete(t *testing.T) {
 	if len(f.sender.sent) != 2 {
 		t.Errorf("sent %d, want both sent: the copy exists even when Complete failed", len(f.sender.sent))
 	}
-	recent, _ := RecentFromFile(f.path, "ns.servicebus.windows.net", "queue:orders", time.Hour, runStart)
+	recent, _ := RecentFromDir(f.dir, "ns.servicebus.windows.net", "queue:orders", time.Hour, runStart)
 	if _, wrote := recent["a"]; !wrote {
 		t.Error("a sent message with a failed Complete is missing from the ledger")
 	}

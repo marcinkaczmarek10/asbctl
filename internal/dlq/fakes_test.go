@@ -195,13 +195,13 @@ func selectionOf(t *testing.T, queue *fakeQueue, filter Filter) Selection {
 
 func openTestLedger(t *testing.T) (*Ledger, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "state", "resend-ledger.ndjson")
-	ledger, err := OpenLedger(path)
+	dir := filepath.Join(t.TempDir(), "state")
+	ledger, err := OpenLedger(dir, runStart)
 	if err != nil {
 		t.Fatalf("OpenLedger() error = %v", err)
 	}
 	t.Cleanup(func() { _ = ledger.Close() })
-	return ledger, path
+	return ledger, dir
 }
 
 // resendFixture wires a queue, a sender and a ledger to a Resend call.
@@ -210,7 +210,7 @@ type resendFixture struct {
 	sender *fakeSender
 	clock  *fakeClock
 	ledger *Ledger
-	path   string
+	dir    string
 	deps   ResendDeps
 	params ResendParams
 	got    []Result
@@ -218,8 +218,8 @@ type resendFixture struct {
 
 func newResendFixture(t *testing.T, queue *fakeQueue, filter Filter) *resendFixture {
 	t.Helper()
-	ledger, path := openTestLedger(t)
-	f := &resendFixture{queue: queue, sender: &fakeSender{failing: map[int]error{}}, clock: &fakeClock{now: runStart}, ledger: ledger, path: path}
+	ledger, dir := openTestLedger(t)
+	f := &resendFixture{queue: queue, sender: &fakeSender{failing: map[int]error{}}, clock: &fakeClock{now: runStart}, ledger: ledger, dir: dir}
 	f.deps = ResendDeps{Receiver: queue, Sender: f.sender, Peeker: queue, Ledger: ledger, Now: f.clock.Now, Sleep: f.clock.Sleep, Logger: discardLogger}
 	f.params = ResendParams{
 		Selection: selectionOf(t, queue, filter), Snapshot: "snap.ndjson", Namespace: "ns.servicebus.windows.net", Target: "queue:orders",
