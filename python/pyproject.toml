@@ -18,8 +18,8 @@ dev = [
     "prek==0.5.10",
     "pytest==9.2.0",
     "pytest-asyncio==1.4.1.post1",
-    "ruff==0.17.3",
-    "ty==0.0.98",
+    "ruff==0.17.4",
+    "ty==0.0.99",
 ]
 
 [tool.pytest.ini_options]
